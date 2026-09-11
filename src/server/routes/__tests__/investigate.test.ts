@@ -8,7 +8,7 @@ beforeEach(() => {
   clearInvestigations();
   clearCache();
   delete process.env.GROQ_API_KEY;
-  delete process.env.TAVILY_API_KEY;
+  delete process.env.SEARXNG_URL;
 });
 
 afterEach(() => {

@@ -20,10 +20,14 @@ Open http://localhost:5173, enter a claim, press **Investigate**.
 | `PORT` | no (default 3000) | API port |
 | `GROQ_API_KEY` | no (falls back to offline mock) | Default server LLM key (Groq, GPT-OSS 120B) |
 | `GROQ_MODEL` | no (default `openai/gpt-oss-120b`) | Model id |
-| `TAVILY_API_KEY` | no | Web search provider |
+| `SEARCH_PROVIDER` | no (default web search) | Set to `mock` to force the offline mock provider |
+| `SEARXNG_URL` | no | Self-hosted SearXNG base URL — replaces the DuckDuckGo scraper |
+| `WIKIPEDIA_LANG` | no (default `en`) | Wikipedia edition for reference search |
 | `FACTCHECK_API_KEY` | no | Google Fact Check Tools API (prior fact-checks signal) |
+| `DDG_REQUEST_GAP_MS` | no (default 1200) | Politeness gap between DuckDuckGo scrape requests |
+| `SOURCE_FETCH_TIMEOUT_MS` | no (default 20000) | Total deadline per source page-fetch (headers + body) |
 
-Without keys the app runs on deterministic mock search + mock LLM so the full flow (input → verdict) works offline; CI runs this way.
+Without keys the app runs web search (DuckDuckGo) + Wikipedia + mock LLM; with `NODE_ENV=test` (and CI) all search uses the deterministic mock so the suite never needs network or keys.
 
 ## Running frontend / backend
 
@@ -35,7 +39,13 @@ Without keys the app runs on deterministic mock search + mock LLM so the full fl
 ## Configuring providers
 
 - **LLM:** implement `LLMProvider` (`src/server/providers/llm/types.ts`) in one new file (see `groq.ts`, `mock.ts`), then select it in `src/server/services/llmFactory.ts`. The evidence analyzer only depends on the interface.
-- **Search:** implement `SearchProvider` (`src/server/providers/search/types.ts`), register in `getSearchProviders()` (`src/server/services/search.ts`). Neutral/supporting/contradicting queries run concurrently per claim.
+- **Search:** implement `SearchProvider` (`src/server/providers/search/types.ts`), register in `getSearchProviders()` (`src/server/services/search.ts`). Neutral/supporting/contradicting queries run concurrently per claim. Current providers: `duckduckgo` (default web), `searxng` (self-hosted), `wikipedia` (reference), `factcheck` (prior fact-checks, optional key), `mock` (tests/CI).
+
+## Search trade-offs (read this before deploying)
+
+- The default web search scrapes DuckDuckGo's HTML results endpoint with `cheerio` — there is no official free DDG web-search API, so this is a scrape, not a documented endpoint. It needs zero keys, but it is inherently fragile (DDG can change its markup without notice; parse failures surface as typed provider errors, never crashes) and automated querying is against DDG's terms for production-scale use. Mitigations built in: real `User-Agent`, ≥1.2s spacing between requests, 10-minute identical-query cache. DDG's official Instant Answer API is intentionally *not* used as a provider — it returns infobox answers only, not web results.
+- **Recommended upgrade path:** self-host [SearXNG](https://docs.searxng.org/) (open-source metasearch, JSON API, no per-query cost) and set `SEARXNG_URL` — the app swaps to it with no other changes.
+- Source pages are fetched with plain HTTP + `@mozilla/readability`/`jsdom` (free, self-hosted); no headless browser, no paid scraping APIs. Every fetch carries a real `User-Agent`, a 20s total deadline, and a 2MB cap, and every URL (including each redirect hop) passes an SSRF guard that blocks private/loopback/link-local/metadata ranges and fails closed on DNS errors. Paywalled/unreachable sources fall back to archive.org and are labeled `archived_fallback`. The app respects HTTP status codes and rate pacing; it does not bypass CAPTCHAs, paywalls, robots handling, or bot protections.
 
 ## BYOK usage
 
@@ -52,7 +62,7 @@ Open **Settings** → paste a Groq key → **Test connection** → run an invest
 
 ## Deployment
 
-Any Node 18+ host: set env vars, `npm ci && npm run build`, run `npm start` behind HTTPS. No database; history/cache are in-memory session scope. Never set real keys in the client bundle — backend-only.
+Any Node 18+ host: set env vars, `npm ci && npm run build`, run `npm start` behind HTTPS. No database; history/cache are in-memory session scope. Never set real keys in the client bundle — backend-only. Do not set `NODE_ENV=development` in production (a dev React bundle would be shipped).
 
 ## Verdicts
 

@@ -63,6 +63,8 @@ export interface Source {
   accessStatus?: AccessStatus;
   quality?: QualityLabel;
   stance?: EvidenceStance;
+  /** True when the source is a prior fact-check (distinct signal, surfaced separately in the UI). */
+  isFactCheck?: boolean;
 }
 
 export type QualityLabel =
@@ -145,6 +147,8 @@ export interface SearchResultItem {
   author?: string;
   publishedAt?: string;
   sourceType?: SourceType;
+  /** True when the hit is a prior fact-check (distinct signal, surfaced separately in the UI). */
+  isFactCheck?: boolean;
 }
 
 export interface SearchOptions {

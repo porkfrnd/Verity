@@ -17,12 +17,13 @@ export function getCached(claim: string): Investigation | undefined {
     cache.delete(key);
     return undefined;
   }
-  return { ...entry.investigation, cached: true };
+  // Deep copy: callers must not mutate the cached entry through shared refs.
+  return { ...structuredClone(entry.investigation), cached: true };
 }
 
 export function setCached(claim: string, investigation: Investigation): void {
   const key = cacheKeyForClaim(claim);
-  cache.set(key, { investigation, expires: Date.now() + TTL_MS });
+  cache.set(key, { investigation: structuredClone(investigation), expires: Date.now() + TTL_MS });
   // Bound size
   if (cache.size > 200) {
     const first = cache.keys().next().value;

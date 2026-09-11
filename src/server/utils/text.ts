@@ -28,6 +28,25 @@ export function normalizeWhitespace(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/** Decode HTML entities (named + decimal/hex numeric) in snippet text. */
+export function decodeEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, code: string) => {
+      const n = Number(code);
+      return Number.isSafeInteger(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : _;
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => {
+      const n = parseInt(hex, 16);
+      return Number.isSafeInteger(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : _;
+    })
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
 export function stripBoilerplate(htmlOrText: string): string {
   // Lightweight readability-style strip: remove script/style/nav-ish noise,
   // collapse whitespace, cap length. Input may already be plain text.
@@ -38,13 +57,8 @@ export function stripBoilerplate(htmlOrText: string): string {
     .replace(/<header[\s\S]*?<\/header>/gi, " ")
     .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
     .replace(/<[^>]+>/g, " ");
-  // Decode a few common entities
-  text = text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+  // Decode entities (named + numeric)
+  text = decodeEntities(text);
   return normalizeWhitespace(text).slice(0, 6000);
 }
 

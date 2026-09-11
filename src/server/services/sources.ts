@@ -34,8 +34,9 @@ export function normalizeResults(items: SearchResultItem[], opts?: { queryIndex?
       content,
       sourceType,
       accessStatus: "ok" as const,
+      ...(r.isFactCheck ? { isFactCheck: true as const } : {}),
     };
-  }).filter((s) => s.url.startsWith("http"));
+  }).filter((s) => /^https?:\/\//i.test(s.url));
 }
 
 const AUTHORITY_SCORE: Record<SourceType, number> = {
@@ -88,6 +89,11 @@ export function labelQuality(s: Source): QualityLabel {
   const body = `${s.content ?? ""} ${s.snippet ?? ""}`;
   if (s.accessStatus === "unreachable") return "Weak source";
   if (s.accessStatus === "archived_fallback") return "Limited evidence";
+  // Dated sources are flagged honestly instead of presented as current.
+  if (s.publishedAt) {
+    const t = Date.parse(s.publishedAt);
+    if (!Number.isNaN(t) && Date.now() - t > 3 * 365 * 24 * 3600 * 1000) return "Outdated";
+  }
   if (s.sourceType === "academic" || s.sourceType === "government") {
     if (body.length > 300) return "High confidence";
     return "Good evidence";

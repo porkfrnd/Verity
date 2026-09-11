@@ -10,5 +10,6 @@ coverage/
 playwright-report/
 test-results/
 .swarm/
+local-verify/
 *.db
 *.sqlite

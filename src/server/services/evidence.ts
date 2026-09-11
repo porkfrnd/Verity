@@ -4,8 +4,9 @@ import { detectContradictions } from "./contradiction.js";
 import { getCached, setCached } from "./cache.js";
 import { getLLMProvider } from "./llmFactory.js";
 import { runSearchAll } from "./search.js";
-import { buildQueriesForClaim, checkVerifiability, splitClaimsHeuristic, stripInjectionArtifacts } from "./claimExtractor.js";
+import { buildQueriesForClaim, checkVerifiability, splitClaimsHeuristic } from "./claimExtractor.js";
 import { deduplicateSources, normalizeResults, rankSources, resetSourceCounter, withQuality } from "./sources.js";
+import { enrichSources } from "./sourceFetch.js";
 
 export interface InvestigateOptions {
   apiKey?: string;
@@ -70,7 +71,7 @@ export async function investigate(rawClaim: string, opts?: InvestigateOptions): 
   // 1. Claim extraction (LLM with heuristic fallback). Runtime-validate JSON.
   let extraction;
   try {
-    extraction = await llm.extractClaims(stripInjectionArtifacts(trimmed).length >= 3 ? trimmed : trimmed);
+    extraction = await llm.extractClaims(trimmed);
     extraction = claimExtractionSchema.parse(extraction);
   } catch {
     const claims = splitClaimsHeuristic(trimmed);
@@ -137,10 +138,13 @@ export async function investigate(rawClaim: string, opts?: InvestigateOptions): 
       continue;
     }
 
-    // 3. Normalize → dedupe → rank → quality.
+    // 3. Normalize → dedupe → rank → fetch main content → quality.
     let sources: Source[] = normalizeResults(rawResults);
     sources = deduplicateSources(sources);
     sources = rankSources(sources).slice(0, 8);
+    // Extract readable main content (Readability) for snippet-only hits;
+    // failures degrade the access status, never the investigation.
+    sources = await enrichSources(sources);
     sources = withQuality(sources);
 
     // 4. Evidence analysis (LLM, schema-validated).
