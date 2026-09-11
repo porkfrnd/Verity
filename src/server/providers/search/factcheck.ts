@@ -1,12 +1,14 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
-import type { SearchProvider } from "./types.js";
+import { ProviderError, type SearchProvider } from "./types.js";
 
 // Google Fact Check Tools API — optional distinct signal ("Prior fact-checks
 // found"). Requires FACTCHECK_API_KEY; returns [] when unconfigured so the
-// pipeline works without it.
+// pipeline works without it. Configured-but-failing calls throw ProviderError
+// like every other provider (callers record it in the search report).
 export class FactCheckProvider implements SearchProvider {
   id = "factcheck";
+  queryBudget = 2;
   private apiKey: string;
   private fetchFn: typeof fetch;
   constructor(apiKey?: string, opts?: { fetchFn?: typeof fetch }) {
@@ -16,15 +18,13 @@ export class FactCheckProvider implements SearchProvider {
   async search(query: string, opts?: { count?: number; signal?: AbortSignal }): Promise<SearchResultItem[]> {
     const q = query.trim();
     if (!q || !this.apiKey) return [];
+    if (opts?.signal?.aborted) throw new ProviderError("Fact-check search aborted", { timeout: true });
     const timeout = AbortSignal.timeout(15000);
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     try {
       const url = `https://factchecktools.googleapis.com/v1alpha1/claims:search?query=${encodeURIComponent(q)}&key=${this.apiKey}`;
       const res = await this.fetchFn(url, { signal });
-      if (!res.ok) {
-        safeError("FactCheckProvider failed", { status: res.status });
-        return [];
-      }
+      if (!res.ok) throw new ProviderError(`Fact-check search failed with status ${res.status}`, { httpStatus: res.status });
       const data = (await res.json()) as {
         claims?: Array<{ text?: string; claimReview?: Array<{ publisher?: { name?: string }; url?: string; title?: string; reviewRating?: { textualRating?: string } }> }>;
       };
@@ -43,8 +43,17 @@ export class FactCheckProvider implements SearchProvider {
       }
       return out.slice(0, opts?.count ?? 5);
     } catch (e) {
-      safeError("FactCheckProvider failed", { message: e instanceof Error ? e.message : "unknown" });
-      return [];
+      if (e instanceof ProviderError) {
+        safeError("FactCheckProvider failed", { queryLength: q.length, reason: e.message });
+        throw e;
+      }
+      const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
+      const err = new ProviderError(
+        timeoutFailure ? "Fact-check search timed out" : `Fact-check search failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        timeoutFailure ? { timeout: true } : undefined
+      );
+      safeError("FactCheckProvider failed", { queryLength: q.length, reason: err.message });
+      throw err;
     }
   }
 }

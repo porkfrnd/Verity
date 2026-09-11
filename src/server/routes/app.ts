@@ -51,9 +51,9 @@ export function createApp() {
       res.status(400).json({ error: "invalid_request", message: "Claim is required (3–5000 chars).", details: parsed.error.flatten() });
       return;
     }
-    const { claim, apiKey, model } = parsed.data;
+    const { claim, apiKey, model, depth } = parsed.data;
     try {
-      const inv = await investigate(claim, { apiKey, model });
+      const inv = await investigate(claim, { apiKey, model, depth });
       saveInvestigation(inv);
       // Never echo the key back.
       res.json({ ...inv, apiKey: undefined });
@@ -68,6 +68,48 @@ export function createApp() {
         error: "investigation_failed",
         message: "The investigation could not be completed. Try again or check provider configuration.",
       });
+    }
+  });
+
+  // Streaming investigation: same pipeline, same outcomes — plus live
+  // provider/dedup/analysis events. POST (not EventSource GET) so BYOK keys
+  // stay in the request body, never in a URL.
+  app.post("/api/investigate/stream", async (req, res) => {
+    const parsed = investigateRequestSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_request", message: "Claim is required (3–5000 chars)." });
+      return;
+    }
+    const { claim, apiKey, model, depth } = parsed.data;
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    const send = (type: string, data: unknown) => {
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    try {
+      const inv = await investigate(claim, {
+        apiKey,
+        model,
+        depth,
+        events: (e) => {
+          if (e.type === "provider") send("provider", { claimId: e.claimId, wave: e.wave, report: e.report });
+          else if (e.type === "dedup") send("dedup", { claimId: e.claimId, totalFound: e.totalFound, uniqueCount: e.uniqueCount });
+          else if (e.type === "early_stop") send("early_stop", { claimId: e.claimId, reason: e.reason });
+          else if (e.type === "budget_exhausted") send("budget_exhausted", { claimId: e.claimId });
+          else if (e.type === "analyzing") send("analyzing", { claimId: e.claimId });
+          else if (e.type === "claim") send("claim", { claimId: e.claimId, verdict: e.verdict, searchFailed: e.searchFailed });
+        },
+      });
+      saveInvestigation(inv);
+      send("done", { ...inv, apiKey: undefined });
+      res.end();
+    } catch (e) {
+      safeError("Streamed investigate failed", { message: e instanceof Error ? e.message : "unknown" });
+      send("error", { message: "The investigation could not be completed. Try again or check provider configuration." });
+      res.end();
     }
   });
 
@@ -126,7 +168,7 @@ export function createApp() {
       return;
     }
     try {
-      const fresh = await investigate(inv.originalClaim, { apiKey: req.body?.apiKey, model: req.body?.model, skipCache: true });
+      const fresh = await investigate(inv.originalClaim, { apiKey: req.body?.apiKey, model: req.body?.model, skipCache: true, depth: inv.depth });
       saveInvestigation(fresh);
       res.json(fresh);
     } catch {

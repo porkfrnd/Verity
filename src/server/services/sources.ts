@@ -72,12 +72,14 @@ export function deduplicateSources(sources: Source[]): Source[] {
   return out;
 }
 
-export function rankSources(sources: Source[]): Source[] {
+export function rankSources(sources: Source[], opts?: { primaryBoost?: boolean }): Source[] {
   // Authority first, then diversity of sourceType, deterministic tie-break on url.
+  // Extended mode boosts academic/government (primary-source discovery).
   const typeSeen = new Set<string>();
   const withScore = sources.map((s) => {
     let score = AUTHORITY_SCORE[s.sourceType] ?? 1;
     if (!typeSeen.has(s.sourceType)) score += 2; // diversity bonus for first of each type
+    if (opts?.primaryBoost && (s.sourceType === "academic" || s.sourceType === "government")) score += 2;
     typeSeen.add(s.sourceType);
     return { s, score };
   });

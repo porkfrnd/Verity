@@ -1,6 +1,6 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
-import type { SearchProvider } from "./types.js";
+import { ProviderError, type SearchProvider } from "./types.js";
 
 /**
  * Self-hosted SearXNG metasearch (open-source, aggregates multiple engines,
@@ -20,8 +20,8 @@ export class SearXNGSearchProvider implements SearchProvider {
   async search(query: string, opts?: { count?: number; signal?: AbortSignal }): Promise<SearchResultItem[]> {
     const q = query.trim();
     if (!q) return [];
-    if (!this.baseUrl) throw new Error("SearXNG is not configured (missing SEARXNG_URL)");
-    if (opts?.signal?.aborted) throw new Error("SearXNG search aborted");
+    if (!this.baseUrl) throw new ProviderError("SearXNG is not configured (missing SEARXNG_URL)");
+    if (opts?.signal?.aborted) throw new ProviderError("SearXNG search aborted", { timeout: true });
     const timeout = AbortSignal.timeout(15000);
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     try {
@@ -32,7 +32,7 @@ export class SearXNGSearchProvider implements SearchProvider {
           headers: { "User-Agent": "Verity/0.1", Accept: "application/json" },
         }
       );
-      if (!res.ok) throw new Error(`SearXNG search failed with status ${res.status}`);
+      if (!res.ok) throw new ProviderError(`SearXNG search failed with status ${res.status}`, { httpStatus: res.status });
       const data = (await res.json()) as {
         results?: Array<{ title?: string; url?: string; content?: string }>;
       };
@@ -46,11 +46,17 @@ export class SearXNGSearchProvider implements SearchProvider {
         .filter((r) => /^https?:\/\//i.test(r.url))
         .slice(0, opts?.count ?? 5);
     } catch (e) {
-      safeError("SearXNGSearchProvider failed", {
-        queryLength: q.length,
-        reason: e instanceof Error ? e.message : "unknown",
-      });
-      throw e instanceof Error ? e : new Error("SearXNG search failed");
+      if (e instanceof ProviderError) {
+        safeError("SearXNGSearchProvider failed", { queryLength: q.length, reason: e.message });
+        throw e;
+      }
+      const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
+      const err = new ProviderError(
+        timeoutFailure ? "SearXNG search timed out" : `SearXNG search failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        timeoutFailure ? { timeout: true } : undefined
+      );
+      safeError("SearXNGSearchProvider failed", { queryLength: q.length, reason: err.message });
+      throw err;
     }
   }
 }

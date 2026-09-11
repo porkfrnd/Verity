@@ -1,6 +1,11 @@
 import type { Contradiction, ContradictionStatus, Source } from "../../shared/types.js";
 import { jaccardSimilarity } from "../utils/text.js";
 
+/** Cheap heuristic stance for pre-analysis decisions (early stopping). */
+export function heuristicStance(text: string): "supports" | "contradicts" | "neutral" {
+  return stanceOf(text);
+}
+
 function stanceOf(text: string): "supports" | "contradicts" | "neutral" {
   const t = text.toLowerCase();
   const con = /not visible|myth|misleading|false|no evidence|debunked|incorrect|not true|contradict|deny|refute/.test(t);

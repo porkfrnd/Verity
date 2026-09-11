@@ -124,4 +124,16 @@ describe("GET /api/investigations/:id", () => {
     expect(fetched.status).toBe(200);
     expect(fetched.body.id).toBe(created.body.id);
   });
+
+  it("recheck preserves the original depth (no silent downgrade)", async () => {
+    const app = createApp();
+    const created = await request(app)
+      .post("/api/investigate")
+      .send({ claim: `Depth retry probe ${Date.now()}`, depth: "extended" });
+    expect(created.body.depth).toBe("extended");
+    const rechecked = await request(app).post(`/api/investigations/${created.body.id}/recheck`).send({});
+    expect(rechecked.status).toBe(200);
+    expect(rechecked.body.depth).toBe("extended");
+    expect(rechecked.body.id).not.toBe(created.body.id);
+  });
 });

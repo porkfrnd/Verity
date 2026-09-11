@@ -128,11 +128,54 @@ export interface ClaimVerdict {
   contradictions: Contradiction[];
   verifiedAt: string;
   staleNote?: string;
+  /**
+   * True when retrieval itself failed (no provider succeeded). The LLM is
+   * never consulted in this case — there is nothing to analyze. Distinct
+   * from `unverified`, which means search worked but evidence was thin.
+   */
+  searchFailed: boolean;
+  searchReport: SearchReport;
+  /** Deterministic verdict confidence. Absent only when search failed. */
+  confidence?: ConfidenceScore;
+}
+
+/** Per-provider outcome for one investigation step. Never thrown away. */
+export interface ProviderReport {
+  provider: string;
+  status: "success" | "timeout" | "error";
+  /** Wall-clock ms for this provider's batch (all queries). */
+  latencyMs: number;
+  /** Raw hits returned (pre-dedupe). */
+  sources: number;
+  retries: number;
+  httpStatus?: number;
+  error: string | null;
+}
+
+export interface SearchReport {
+  providers: ProviderReport[];
+  /** Raw hits across providers, pre-dedupe. */
+  totalFound: number;
+  /** Sources surviving normalization + dedupe. */
+  uniqueCount: number;
+  /** True when the global search deadline fired before providers finished. */
+  budgetExhausted: boolean;
+}
+
+export type SearchDepth = "flash" | "deep" | "extended";
+
+/** Deterministic confidence in the verdict — computed by Verity's scorer, never by the LLM. */
+export interface ConfidenceScore {
+  /** Integer 3–97. Confidence in the verdict, NOT probability the claim is true. */
+  percentage: number;
+  /** Signed contributions that sum to `percentage`. Shown in the UI. */
+  breakdown: Record<string, number>;
 }
 
 export interface Investigation {
   id: string;
   originalClaim: string;
+  depth: SearchDepth;
   extraction: ClaimExtraction;
   results: ClaimVerdict[];
   createdAt: string;

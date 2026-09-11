@@ -257,18 +257,19 @@ async function fetchWithSignal(
 }
 
 const ENRICH_CONCURRENCY = 4;
-const ENRICH_MAX_SOURCES = 6;
 
 /**
  * Enrich the top-ranked sources lacking usable content by fetching their
- * pages (bounded concurrency). Fetch failures degrade the access status —
- * they never fail the investigation. Skipped in the test env, where the
- * mock corpus already carries content and network is forbidden.
+ * pages (bounded concurrency, bounded count). Fetch failures degrade the
+ * access status — they never fail the investigation. Skipped in the test
+ * env, where the mock corpus already carries content and network is
+ * forbidden.
  */
-export async function enrichSources(sources: Source[], opts?: FetchOpts): Promise<Source[]> {
+export async function enrichSources(sources: Source[], opts?: FetchOpts & { maxEnrich?: number }): Promise<Source[]> {
   if (isTestEnv()) return sources;
+  const maxEnrich = opts?.maxEnrich ?? 6;
   const targets = sources
-    .slice(0, ENRICH_MAX_SOURCES)
+    .slice(0, maxEnrich)
     .filter((s) => !(s.content ?? s.snippet ?? "").trim() || (s.content ?? s.snippet ?? "").length < MIN_READABLE_CHARS);
   if (targets.length === 0) return sources;
   const byId = new Map<string, FetchedSource>();
@@ -276,6 +277,7 @@ export async function enrichSources(sources: Source[], opts?: FetchOpts): Promis
   await Promise.all(
     Array.from({ length: Math.min(ENRICH_CONCURRENCY, queue.length) }, async () => {
       while (queue.length > 0) {
+        if (opts?.signal?.aborted) break;
         const s = queue.shift();
         if (!s) break;
         if (!/^https?:\/\//i.test(s.url)) continue;

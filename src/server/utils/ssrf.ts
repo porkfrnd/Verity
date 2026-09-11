@@ -17,17 +17,9 @@ function parseIPv4(ip: string): number | null {
   if (parts.length !== 4) return null;
   let n = 0;
   for (const p of parts) {
-    if (!/^\d+$/.test(p) || (p.length > 1 && p.startsWith("0"))) {
-      // Reject leading-zero octets (ambiguity with octal parsing).
-      if (!(p.length > 1 && p.startsWith("0"))) {
-        const v = Number(p);
-        if (Number.isInteger(v) && v >= 0 && v <= 255) {
-          n = n * 256 + v;
-          continue;
-        }
-      }
-      return null;
-    }
+    if (!/^\d+$/.test(p)) return null;
+    // Reject leading-zero octets (octal ambiguity); "0" itself is fine.
+    if (p.length > 1 && p.startsWith("0")) return null;
     const v = Number(p);
     if (!Number.isInteger(v) || v < 0 || v > 255) return null;
     n = n * 256 + v;

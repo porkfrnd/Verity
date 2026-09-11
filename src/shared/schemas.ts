@@ -117,10 +117,13 @@ export const contradictionSchema = z.object({
   status: contradictionStatusSchema,
 });
 
+export const searchDepthSchema = z.enum(["flash", "deep", "extended"]);
+
 export const investigateRequestSchema = z.object({
   claim: z.string().min(3).max(5000),
   apiKey: z.string().optional(),
   model: z.string().optional(),
+  depth: searchDepthSchema.optional(),
 });
 
 export type InvestigateRequest = z.infer<typeof investigateRequestSchema>;

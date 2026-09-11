@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { API_UNREACHABLE_MESSAGE, investigateClaim, testConnection } from "../api.js";
+import { API_UNREACHABLE_MESSAGE, investigateClaim, investigateClaimStream, parseSseBuffer, testConnection } from "../api.js";
+import type { Investigation } from "../../../shared/types.js";
 
 function jsonResponse(body: unknown, status = 200, contentType = "application/json"): Response {
   return new Response(typeof body === "string" ? body : JSON.stringify(body), {
@@ -66,5 +67,62 @@ describe("api error surfacing", () => {
       })
     );
     await expect(investigateClaim("Water boils.")).rejects.toBe(abort);
+  });
+});
+
+describe("SSE stream parsing", () => {
+  it("parses complete frames and holds back partial ones", () => {
+    const { events, rest } = parseSseBuffer(
+      'event: provider\ndata: {"provider":"duckduckgo"}\n\nevent: dedup\ndata: {"totalFound":'
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "provider" });
+    expect(rest).toContain("totalFound");
+    const again = parseSseBuffer(`${rest}17}\n\n`);
+    expect(again.events).toHaveLength(1);
+    expect(again.events[0]).toMatchObject({ type: "dedup" });
+  });
+
+  it("skips malformed frames without killing the stream", () => {
+    const { events } = parseSseBuffer("event: provider\ndata: not-json{{\n\nevent: done\ndata: {\"ok\":true}\n\n");
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("done");
+  });
+});
+
+describe("investigateClaimStream", () => {
+  const inv = { id: "inv-1", originalClaim: "x", depth: "flash", extraction: { original_claim: "x", claims: [], searchQueries: {}, verifiability: {} }, results: [], createdAt: "t" } as unknown as Investigation;
+
+  function sseResponse(frames: string[]): Response {
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const f of frames) controller.enqueue(new TextEncoder().encode(f));
+        controller.close();
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  }
+
+  it("emits live events and resolves with the done investigation", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        sseResponse([
+          'event: provider\ndata: {"provider":"duckduckgo","status":"success"}\n\n',
+          `event: done\ndata: ${JSON.stringify(inv)}\n\n`,
+        ])
+      )
+    );
+    const out = await investigateClaimStream("x", "flash", (e) => seen.push(e.type));
+    expect(seen).toEqual(["provider"]);
+    expect(out.id).toBe("inv-1");
+  });
+
+  it("rejects on stream error events and falls back cleanly on truncation", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse(['event: error\ndata: {"message":"boom"}\n\n'])));
+    await expect(investigateClaimStream("x", "flash", () => {})).rejects.toThrow("boom");
+    vi.stubGlobal("fetch", vi.fn(async () => sseResponse(['event: provider\ndata: {"a":1}\n\n'])));
+    await expect(investigateClaimStream("x", "flash", () => {})).rejects.toThrow("STREAM_INCOMPLETE");
   });
 });

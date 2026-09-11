@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
-import type { SearchProvider } from "./types.js";
+import { ProviderError, type SearchProvider } from "./types.js";
 
 export const DDG_UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 Verity/0.1";
@@ -64,7 +64,7 @@ export function parseDuckDuckGoHtml(html: string): SearchResultItem[] {
   const containers = $(".result");
   if (containers.length === 0) {
     if ($(".no-results").length > 0 || /no results/i.test($.text().slice(0, 2000))) return [];
-    throw new Error("DuckDuckGo markup changed or request blocked (no result nodes found)");
+    throw new ProviderError("DuckDuckGo markup changed or request blocked (no result nodes found)");
   }
   const out: SearchResultItem[] = [];
   containers.each((_, el) => {
@@ -116,7 +116,7 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
     if (gap < this.minGapMs) {
       await new Promise((r) => setTimeout(r, this.minGapMs - gap));
     }
-    if (opts?.signal?.aborted) throw new Error("DuckDuckGo search aborted");
+    if (opts?.signal?.aborted) throw new ProviderError("DuckDuckGo search aborted", { timeout: true });
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     try {
@@ -127,19 +127,24 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
           Accept: "text/html",
         },
       });
+      if (!res.ok) throw new ProviderError(`DuckDuckGo search failed with status ${res.status}`, { httpStatus: res.status });
       const html = await res.text();
-      if (!res.ok) throw new Error(`DuckDuckGo search failed with status ${res.status}`);
       const results = parseDuckDuckGoHtml(html);
       setCachedQuery(q, results);
       return results.slice(0, opts?.count ?? 5);
     } catch (e) {
+      if (e instanceof ProviderError) {
+        safeError("DuckDuckGoSearchProvider failed", { queryLength: q.length, reason: e.message });
+        throw e;
+      }
+      const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
+      const err = new ProviderError(
+        timeoutFailure ? `DuckDuckGo search timed out after ${this.timeoutMs}ms` : `DuckDuckGo search failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        timeoutFailure ? { timeout: true } : undefined
+      );
       // Log length, never content: queries are user claims (privacy).
-      safeError("DuckDuckGoSearchProvider failed", {
-        queryLength: q.length,
-        reason: e instanceof Error ? e.message : "unknown",
-      });
-      if (e instanceof Error && /markup changed|failed with status|abort/i.test(e.message)) throw e;
-      throw new Error(`DuckDuckGo search failed: ${e instanceof Error ? e.message : "unknown error"}`);
+      safeError("DuckDuckGoSearchProvider failed", { queryLength: q.length, reason: err.message });
+      throw err;
     } finally {
       lastRequestAt = Date.now();
     }

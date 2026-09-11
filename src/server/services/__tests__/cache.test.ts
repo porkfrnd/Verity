@@ -6,6 +6,7 @@ function fakeInv(claim: string): Investigation {
   return {
     id: "inv-test",
     originalClaim: claim,
+    depth: "deep",
     extraction: { original_claim: claim, claims: [], searchQueries: {}, verifiability: {} },
     results: [],
     createdAt: new Date().toISOString(),
@@ -21,5 +22,18 @@ describe("cache", () => {
     expect(getCached("  water  BOILS at 100c ")).toBeDefined();
     // Genuinely different claims must not collide.
     expect(getCached("Water boils at 90C on Mount Everest.")).toBeUndefined();
+  });
+
+  it("depth is part of the cache key (flash and extended do not share)", async () => {
+    const { investigate } = await import("../evidence.js");
+    clearCache();
+    const claim = `Depth cache probe ${Date.now()}`;
+    const flash = await investigate(claim, { depth: "flash" });
+    expect(flash.depth).toBe("flash");
+    const cachedFlash = await investigate(claim, { depth: "flash" });
+    expect(cachedFlash.cached).toBe(true);
+    const extended = await investigate(claim, { depth: "extended" });
+    expect(extended.cached).not.toBe(true);
+    expect(extended.depth).toBe("extended");
   });
 });

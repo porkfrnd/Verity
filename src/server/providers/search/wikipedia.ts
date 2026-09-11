@@ -1,7 +1,7 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
 import { decodeEntities, normalizeWhitespace } from "../../utils/text.js";
-import type { SearchProvider } from "./types.js";
+import { ProviderError, type SearchProvider } from "./types.js";
 
 /** Strip HTML highlight tags from MediaWiki search snippets. */
 export function cleanWikiSnippet(html: string): string {
@@ -27,7 +27,7 @@ export class WikipediaSearchProvider implements SearchProvider {
   async search(query: string, opts?: { count?: number; signal?: AbortSignal }): Promise<SearchResultItem[]> {
     const q = query.trim();
     if (!q) return [];
-    if (opts?.signal?.aborted) throw new Error("Wikipedia search aborted");
+    if (opts?.signal?.aborted) throw new ProviderError("Wikipedia search aborted", { timeout: true });
     const timeout = AbortSignal.timeout(15000);
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     try {
@@ -39,7 +39,7 @@ export class WikipediaSearchProvider implements SearchProvider {
         signal,
         headers: { "User-Agent": "Verity/0.1 (evidence-based claim verification)", Accept: "application/json" },
       });
-      if (!res.ok) throw new Error(`Wikipedia search failed with status ${res.status}`);
+      if (!res.ok) throw new ProviderError(`Wikipedia search failed with status ${res.status}`, { httpStatus: res.status });
       const data = (await res.json()) as {
         query?: { search?: Array<{ title?: string; snippet?: string }> };
       };
@@ -53,11 +53,17 @@ export class WikipediaSearchProvider implements SearchProvider {
         };
       });
     } catch (e) {
-      safeError("WikipediaSearchProvider failed", {
-        queryLength: q.length,
-        reason: e instanceof Error ? e.message : "unknown",
-      });
-      throw e instanceof Error ? e : new Error("Wikipedia search failed");
+      if (e instanceof ProviderError) {
+        safeError("WikipediaSearchProvider failed", { queryLength: q.length, reason: e.message });
+        throw e;
+      }
+      const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
+      const err = new ProviderError(
+        timeoutFailure ? "Wikipedia search timed out" : `Wikipedia search failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        timeoutFailure ? { timeout: true } : undefined
+      );
+      safeError("WikipediaSearchProvider failed", { queryLength: q.length, reason: err.message });
+      throw err;
     }
   }
 }
