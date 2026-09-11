@@ -1,7 +1,7 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
 import { normalizeWhitespace } from "../../utils/text.js";
-import { ProviderError, type SearchProvider } from "./types.js";
+import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 interface OpenAlexWork {
   id?: string;
@@ -51,7 +51,7 @@ export class OpenAlexSearchProvider implements SearchProvider {
         `https://api.openalex.org/works?search=${encodeURIComponent(q)}&per-page=${opts?.count ?? 5}&select=id,doi,title,publication_date,cited_by_count,authorships,primary_location,abstract_inverted_index`,
         { signal, headers: { "User-Agent": "Verity/0.1 (evidence-based claim verification)", Accept: "application/json" } }
       );
-      if (!res.ok) throw new ProviderError(`OpenAlex search failed with status ${res.status}`, { httpStatus: res.status });
+      if (!res.ok) throw new ProviderError(`OpenAlex search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
       const data = (await res.json()) as { results?: OpenAlexWork[] };
       return (data.results ?? []).slice(0, opts?.count ?? 5).map((w) => {
         const title = (w.title ?? "Untitled").slice(0, 300);
@@ -79,7 +79,7 @@ export class OpenAlexSearchProvider implements SearchProvider {
       }).filter((r) => /^https?:\/\//i.test(r.url));
     } catch (e) {
       if (e instanceof ProviderError) {
-        safeError("OpenAlexProvider failed", { queryLength: q.length, reason: e.message });
+        safeError("OpenAlexProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e) });
         throw e;
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
@@ -87,7 +87,7 @@ export class OpenAlexSearchProvider implements SearchProvider {
         timeoutFailure ? "OpenAlex search timed out" : `OpenAlex search failed: ${e instanceof Error ? e.message : "unknown error"}`,
         timeoutFailure ? { timeout: true } : undefined
       );
-      safeError("OpenAlexProvider failed", { queryLength: q.length, reason: err.message });
+      safeError("OpenAlexProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
       throw err;
     }
   }

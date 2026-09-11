@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
-import { ProviderError, type SearchProvider } from "./types.js";
+import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 export const DDG_UA =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 Verity/0.1";
@@ -54,17 +54,36 @@ export function unwrapDuckDuckGoHref(href: string): string {
 
 /**
  * Parse DuckDuckGo HTML-results page into search hits.
- * Exported for tests. Throws a provider error when the markup contains no
- * recognizable result nodes at all (likely markup change or block page) —
- * callers surface that as a typed provider error, never a crash.
- * A page with result containers but no usable URLs is a legitimate empty set.
+ * Exported for tests. Throws a ProviderError with structural diagnostics
+ * (§8: status/content-type/length/indicators, never a content dump) when the
+ * markup contains no recognizable result nodes at all — callers surface that
+ * as a typed provider error, never a crash. A page with result containers
+ * but no usable URLs is a legitimate empty set.
  */
-export function parseDuckDuckGoHtml(html: string): SearchResultItem[] {
+export function parseDuckDuckGoHtml(html: string, meta?: { httpStatus?: number; contentType?: string; finalUrl?: string }): SearchResultItem[] {
   const $ = cheerio.load(html);
   const containers = $(".result");
   if (containers.length === 0) {
     if ($(".no-results").length > 0 || /no results/i.test($.text().slice(0, 2000))) return [];
-    throw new ProviderError("DuckDuckGo markup changed or request blocked (no result nodes found)");
+    const text = $.text().slice(0, 2000);
+    const title = $("title").first().text().trim().slice(0, 120);
+    throw new ProviderError("DuckDuckGo markup changed or request blocked (no result nodes found)", {
+      category: "parse",
+      detail: {
+        httpStatus: meta?.httpStatus ?? 0,
+        contentType: (meta?.contentType ?? "").slice(0, 60),
+        bodyLength: html.length,
+        hasAnomaly: /captcha|challenge|unusual traffic|verify you are|attention|denied|forbidden/i.test(text) ? true : false,
+        pageTitle: title || "(none)",
+        finalHost: (() => {
+          try {
+            return new URL(meta?.finalUrl ?? "").hostname;
+          } catch {
+            return "(unknown)";
+          }
+        })(),
+      },
+    });
   }
   const out: SearchResultItem[] = [];
   containers.each((_, el) => {
@@ -127,14 +146,18 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
           Accept: "text/html",
         },
       });
-      if (!res.ok) throw new ProviderError(`DuckDuckGo search failed with status ${res.status}`, { httpStatus: res.status });
+      if (!res.ok) throw new ProviderError(`DuckDuckGo search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
       const html = await res.text();
-      const results = parseDuckDuckGoHtml(html);
+      const results = parseDuckDuckGoHtml(html, {
+        httpStatus: res.status,
+        contentType: res.headers.get("content-type") ?? "",
+        finalUrl: res.url,
+      });
       setCachedQuery(q, results);
       return results.slice(0, opts?.count ?? 5);
     } catch (e) {
       if (e instanceof ProviderError) {
-        safeError("DuckDuckGoSearchProvider failed", { queryLength: q.length, reason: e.message });
+        safeError("DuckDuckGoSearchProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e), detail: e.detail ?? null });
         throw e;
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
@@ -143,7 +166,7 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
         timeoutFailure ? { timeout: true } : undefined
       );
       // Log length, never content: queries are user claims (privacy).
-      safeError("DuckDuckGoSearchProvider failed", { queryLength: q.length, reason: err.message });
+      safeError("DuckDuckGoSearchProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
       throw err;
     } finally {
       lastRequestAt = Date.now();

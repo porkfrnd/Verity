@@ -7,7 +7,7 @@ import { MockSearchProvider } from "../providers/search/mock.js";
 import { OpenAlexSearchProvider } from "../providers/search/openalex.js";
 import { SearXNGSearchProvider } from "../providers/search/searxng.js";
 import { WikipediaSearchProvider } from "../providers/search/wikipedia.js";
-import { ProviderError, httpStatusOf, isTimeoutError, type SearchProvider } from "../providers/search/types.js";
+import { ProviderError, causeFingerprint, describeError, httpStatusOf, isTimeoutError, type SearchProvider } from "../providers/search/types.js";
 import { safeError } from "../utils/redact.js";
 
 export function isTestEnv(): boolean {
@@ -73,6 +73,8 @@ interface JobOutcome {
   items: SearchResultItem[];
   latencyMs: number;
   retries: number;
+  /** Fingerprint per failed attempt, oldest first (§13: retries never hide causes). */
+  attempts: string[];
   error: unknown;
 }
 
@@ -84,6 +86,7 @@ async function runJob(
 ): Promise<JobOutcome> {
   const started = Date.now();
   let retries = 0;
+  const attempts: string[] = [];
   // Race the provider against caller cancellation so a hung provider that
   // ignores its signal cannot stall the investigation forever. The thunk
   // defers invocation so a pre-aborted signal never starts (or orphans) work.
@@ -106,15 +109,16 @@ async function runJob(
   for (let attempt = 0; ; attempt++) {
     try {
       const items = await withCancel(() => provider.search(query, { count: opts.count, signal: opts.signal }));
-      return { provider: provider.id, items, latencyMs: Date.now() - started, retries, error: null };
+      return { provider: provider.id, items, latencyMs: Date.now() - started, retries, attempts, error: null };
     } catch (e) {
+      attempts.push(causeFingerprint(e));
       if (shouldRetry(e, attempt, opts.maxAttempts, opts.signal)) {
         retries++;
         const delay = opts.retryDelayMs * 2 ** attempt;
         if (delay > 0) await new Promise((r) => setTimeout(r, delay));
         continue;
       }
-      return { provider: provider.id, items: [], latencyMs: Date.now() - started, retries, error: e };
+      return { provider: provider.id, items: [], latencyMs: Date.now() - started, retries, attempts, error: e };
     }
   }
 }
@@ -123,27 +127,37 @@ function toReport(provider: string, jobs: JobOutcome[]): ProviderReport {
   const successes = jobs.filter((j) => j.error === null);
   const sources = successes.reduce((n, j) => n + j.items.length, 0);
   const retries = jobs.reduce((n, j) => n + j.retries, 0);
+  const attempts = jobs.flatMap((j) => j.attempts);
   const latencyMs = jobs.reduce((n, j) => Math.max(n, j.latencyMs), 0);
   if (successes.length > 0) {
     const failed = jobs.length - successes.length;
     return {
       provider,
       status: "success",
+      category: sources > 0 ? "ok" : "empty",
       latencyMs,
       sources,
       retries,
+      attempts,
       error: failed > 0 ? `${failed} of ${jobs.length} queries failed` : null,
     };
   }
   const first = jobs[0]?.error;
   const timeout = jobs.some((j) => isTimeoutError(j.error));
+  const httpStatus = httpStatusOf(first);
+  const blocked =
+    first instanceof ProviderError
+      ? first.category === "blocked"
+      : /captcha|challenge|blocked|denied|forbidden|unusual traffic/i.test(first instanceof Error ? first.message : "");
   return {
     provider,
     status: timeout ? "timeout" : "error",
+    category: blocked ? "blocked" : timeout ? "network" : httpStatus !== undefined ? "http" : first instanceof ProviderError && first.category === "parse" ? "parse" : "network",
     latencyMs,
     sources: 0,
     retries,
-    httpStatus: httpStatusOf(first),
+    attempts,
+    httpStatus,
     error: first instanceof Error ? first.message : "search failed",
   };
 }
@@ -187,7 +201,8 @@ export async function runSearchAllWith(
         } else {
           // Typed provider error: surfaced in reports + verdict summary,
           // never a silent empty result and never a raw stack trace.
-          safeError("Search provider failed", { provider: id });
+          // The cause breakdown (§1) is what answers "why exactly did fetch fail?".
+          safeError("Search provider failed", { provider: id, cause: describeError(j.error), attempts: j.attempts });
           errors.push(`${id}: ${j.error instanceof Error ? j.error.message : "search failed"}`);
         }
       }

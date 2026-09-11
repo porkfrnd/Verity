@@ -143,11 +143,19 @@ export interface ClaimVerdict {
 export interface ProviderReport {
   provider: string;
   status: "success" | "timeout" | "error";
+  /**
+   * §16 taxonomy: ok (sources returned) | empty (worked, zero hits) |
+   * network (DNS/TCP/TLS/timeout) | http (provider error status) |
+   * blocked (challenge/captcha/deny page) | parse (response unusable).
+   */
+  category: "ok" | "empty" | "network" | "http" | "blocked" | "parse";
   /** Wall-clock ms for this provider's batch (all queries). */
   latencyMs: number;
   /** Raw hits returned (pre-dedupe). */
   sources: number;
   retries: number;
+  /** One entry per failed attempt, oldest first. */
+  attempts: string[];
   httpStatus?: number;
   error: string | null;
 }

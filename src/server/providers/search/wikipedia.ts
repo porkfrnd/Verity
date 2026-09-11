@@ -1,7 +1,7 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
 import { decodeEntities, normalizeWhitespace } from "../../utils/text.js";
-import { ProviderError, type SearchProvider } from "./types.js";
+import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 /** Strip HTML highlight tags from MediaWiki search snippets. */
 export function cleanWikiSnippet(html: string): string {
@@ -39,7 +39,7 @@ export class WikipediaSearchProvider implements SearchProvider {
         signal,
         headers: { "User-Agent": "Verity/0.1 (evidence-based claim verification)", Accept: "application/json" },
       });
-      if (!res.ok) throw new ProviderError(`Wikipedia search failed with status ${res.status}`, { httpStatus: res.status });
+      if (!res.ok) throw new ProviderError(`Wikipedia search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
       const data = (await res.json()) as {
         query?: { search?: Array<{ title?: string; snippet?: string }> };
       };
@@ -54,7 +54,7 @@ export class WikipediaSearchProvider implements SearchProvider {
       });
     } catch (e) {
       if (e instanceof ProviderError) {
-        safeError("WikipediaSearchProvider failed", { queryLength: q.length, reason: e.message });
+        safeError("WikipediaSearchProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e) });
         throw e;
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
@@ -62,7 +62,7 @@ export class WikipediaSearchProvider implements SearchProvider {
         timeoutFailure ? "Wikipedia search timed out" : `Wikipedia search failed: ${e instanceof Error ? e.message : "unknown error"}`,
         timeoutFailure ? { timeout: true } : undefined
       );
-      safeError("WikipediaSearchProvider failed", { queryLength: q.length, reason: err.message });
+      safeError("WikipediaSearchProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
       throw err;
     }
   }

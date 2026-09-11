@@ -20,9 +20,11 @@ function reportsFor(statuses: Array<"success" | "timeout" | "error">): SearchRun
     reports: statuses.map((status, i) => ({
       provider: `p${i}`,
       status,
+      category: (status === "success" ? "empty" : status === "timeout" ? "network" : "http") as "empty" | "network" | "http",
       latencyMs: 100,
       sources: 0,
       retries: status === "success" ? 0 : 1,
+      attempts: status === "success" ? [] : ["timeout:ETIMEDOUT"],
       error: status === "success" ? null : "timed out",
     })),
   };

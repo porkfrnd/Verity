@@ -23,7 +23,28 @@ Open http://localhost:5173, enter a claim, press **Investigate**.
 |---|---|---|
 | `Cannot reach the API server…` / vite `http proxy error … ECONNREFUSED /api/…` | The API server isn't running | Run `npm run dev:server` in a second terminal and retry |
 | Verdict stuck at `UNVERIFIED` with `…search failed…` | No network or search providers blocked | Check connectivity; CI/tests use the offline mock (`NODE_ENV=test`) |
+| `SEARCH FAILED` with per-provider timeouts | Retrieval infra down (see below) | Run `npm run diagnose:search` |
 | `npm run build` ships a huge JS bundle | `NODE_ENV=development` leaked into the build env | Do not set `NODE_ENV` in `.env` (see note below) |
+
+## Diagnosing search failures
+
+When providers fail, server logs now include the structured cause (`code`, `syscall`, `hostname` — never URLs or keys). For a full workup from the same Node process:
+
+```bash
+npm run diagnose:search
+```
+
+It reports DNS (A/AAAA + latency), IPv4 vs IPv6 TCP connects, HTTPS status/latency per provider host, proxy-env presence (values never printed), then exactly **one query per provider** with connection/HTTP/parser status and per-attempt causes. Exit code is non-zero when no provider returned sources. The same report is available at `GET /api/diagnose/search`.
+
+To separate machine failure from Node-specific failure, compare with curl from the same machine:
+
+```bash
+curl -I https://en.wikipedia.org/      # baseline HTTPS
+curl -4 -I https://api.openalex.org/   # force IPv4
+curl -6 -I https://api.openalex.org/   # force IPv6
+```
+
+If curl succeeds where Node fails, the difference is in Node's stack (DNS selection, Happy Eyeballs, TLS); if both fail identically, it's the machine/network. Failure taxonomy used in reports: `network` (DNS/TCP/TLS/timeout) · `http` (provider error status) · `blocked` (challenge/deny page) · `parse` (response uninterpretable) · `empty` (worked, zero hits) · `ok`.
 
 ## Env vars
 

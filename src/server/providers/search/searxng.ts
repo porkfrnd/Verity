@@ -1,6 +1,6 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
-import { ProviderError, type SearchProvider } from "./types.js";
+import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 /**
  * Self-hosted SearXNG metasearch (open-source, aggregates multiple engines,
@@ -32,7 +32,7 @@ export class SearXNGSearchProvider implements SearchProvider {
           headers: { "User-Agent": "Verity/0.1", Accept: "application/json" },
         }
       );
-      if (!res.ok) throw new ProviderError(`SearXNG search failed with status ${res.status}`, { httpStatus: res.status });
+      if (!res.ok) throw new ProviderError(`SearXNG search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
       const data = (await res.json()) as {
         results?: Array<{ title?: string; url?: string; content?: string }>;
       };
@@ -47,7 +47,7 @@ export class SearXNGSearchProvider implements SearchProvider {
         .slice(0, opts?.count ?? 5);
     } catch (e) {
       if (e instanceof ProviderError) {
-        safeError("SearXNGSearchProvider failed", { queryLength: q.length, reason: e.message });
+        safeError("SearXNGSearchProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e) });
         throw e;
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
@@ -55,7 +55,7 @@ export class SearXNGSearchProvider implements SearchProvider {
         timeoutFailure ? "SearXNG search timed out" : `SearXNG search failed: ${e instanceof Error ? e.message : "unknown error"}`,
         timeoutFailure ? { timeout: true } : undefined
       );
-      safeError("SearXNGSearchProvider failed", { queryLength: q.length, reason: err.message });
+      safeError("SearXNGSearchProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
       throw err;
     }
   }

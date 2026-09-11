@@ -1,7 +1,7 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
 import { decodeEntities, normalizeWhitespace } from "../../utils/text.js";
-import { ProviderError, type SearchProvider } from "./types.js";
+import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 interface DdgInstantResponse {
   AbstractText?: string;
@@ -40,7 +40,7 @@ export class DuckDuckGoInstantProvider implements SearchProvider {
         `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1`,
         { signal, headers: { "User-Agent": "Verity/0.1", Accept: "application/json" } }
       );
-      if (!res.ok) throw new ProviderError(`Instant Answer search failed with status ${res.status}`, { httpStatus: res.status });
+      if (!res.ok) throw new ProviderError(`Instant Answer search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
       const data = (await res.json()) as DdgInstantResponse;
       const out: SearchResultItem[] = [];
       if (data.AbstractText && data.AbstractURL && /^https?:\/\//i.test(data.AbstractURL)) {
@@ -67,7 +67,7 @@ export class DuckDuckGoInstantProvider implements SearchProvider {
       return out.slice(0, opts?.count ?? 5);
     } catch (e) {
       if (e instanceof ProviderError) {
-        safeError("InstantAnswerProvider failed", { queryLength: q.length, reason: e.message });
+        safeError("InstantAnswerProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e) });
         throw e;
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
@@ -75,7 +75,7 @@ export class DuckDuckGoInstantProvider implements SearchProvider {
         timeoutFailure ? "Instant Answer search timed out" : `Instant Answer search failed: ${e instanceof Error ? e.message : "unknown error"}`,
         timeoutFailure ? { timeout: true } : undefined
       );
-      safeError("InstantAnswerProvider failed", { queryLength: q.length, reason: err.message });
+      safeError("InstantAnswerProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
       throw err;
     }
   }

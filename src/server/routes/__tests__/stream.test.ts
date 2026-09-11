@@ -12,7 +12,7 @@ vi.mock("../../services/search.js", async (importOriginal) => {
 });
 
 function okReport(provider: string) {
-  return { provider, status: "success" as const, latencyMs: 50, sources: 2, retries: 0, error: null };
+  return { provider, status: "success" as const, category: "ok" as const, latencyMs: 50, sources: 2, retries: 0, attempts: [] as string[], error: null };
 }
 
 const hits = [

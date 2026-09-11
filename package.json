@@ -12,6 +12,7 @@
     "lint": "eslint src --ext .ts,.tsx",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "diagnose:search": "tsx scripts/diagnose-search.ts",
     "e2e": "playwright test",
     "start": "node dist/server/index.js"
   },

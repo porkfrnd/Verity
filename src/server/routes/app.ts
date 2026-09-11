@@ -45,6 +45,19 @@ export function createApp() {
     });
   });
 
+  // Provider-health diagnostics (§2–§9): same-process DNS/TCP/HTTPS probes
+  // plus one query per provider. Output contains hostnames and error causes
+  // only — no queries, keys, or credentials. Slow by design (bounded probes).
+  app.get("/api/diagnose/search", async (_req, res) => {
+    try {
+      const { diagnoseSearch } = await import("../services/diagnose.js");
+      res.json(await diagnoseSearch());
+    } catch (e) {
+      safeError("Diagnose failed");
+      res.status(502).json({ error: "diagnose_failed", message: e instanceof Error ? e.message : "Diagnostics failed." });
+    }
+  });
+
   app.post("/api/investigate", async (req, res) => {
     const parsed = investigateRequestSchema.safeParse(req.body ?? {});
     if (!parsed.success) {

@@ -1,6 +1,6 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
-import { ProviderError, type SearchProvider } from "./types.js";
+import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 interface GdeltArticle {
   title?: string;
@@ -33,7 +33,7 @@ export class GdeltSearchProvider implements SearchProvider {
         `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=${opts?.count ?? 5}&format=json`,
         { signal, headers: { "User-Agent": "Verity/0.1", Accept: "application/json" } }
       );
-      if (!res.ok) throw new ProviderError(`GDELT search failed with status ${res.status}`, { httpStatus: res.status });
+      if (!res.ok) throw new ProviderError(`GDELT search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
       const data = (await res.json()) as { articles?: GdeltArticle[] };
       return (data.articles ?? []).slice(0, opts?.count ?? 5).map((a) => {
         const url = (a.url ?? "").trim();
@@ -54,7 +54,7 @@ export class GdeltSearchProvider implements SearchProvider {
       }).filter((r) => /^https?:\/\//i.test(r.url));
     } catch (e) {
       if (e instanceof ProviderError) {
-        safeError("GdeltProvider failed", { queryLength: q.length, reason: e.message });
+        safeError("GdeltProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e) });
         throw e;
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
@@ -62,7 +62,7 @@ export class GdeltSearchProvider implements SearchProvider {
         timeoutFailure ? "GDELT search timed out" : `GDELT search failed: ${e instanceof Error ? e.message : "unknown error"}`,
         timeoutFailure ? { timeout: true } : undefined
       );
-      safeError("GdeltProvider failed", { queryLength: q.length, reason: err.message });
+      safeError("GdeltProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
       throw err;
     }
   }

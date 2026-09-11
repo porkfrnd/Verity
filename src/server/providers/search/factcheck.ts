@@ -1,6 +1,6 @@
 import type { SearchResultItem } from "../../../shared/types.js";
 import { safeError } from "../../utils/redact.js";
-import { ProviderError, type SearchProvider } from "./types.js";
+import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 // Google Fact Check Tools API — optional distinct signal ("Prior fact-checks
 // found"). Requires FACTCHECK_API_KEY; returns [] when unconfigured so the
@@ -24,7 +24,7 @@ export class FactCheckProvider implements SearchProvider {
     try {
       const url = `https://factchecktools.googleapis.com/v1alpha1/claims:search?query=${encodeURIComponent(q)}&key=${this.apiKey}`;
       const res = await this.fetchFn(url, { signal });
-      if (!res.ok) throw new ProviderError(`Fact-check search failed with status ${res.status}`, { httpStatus: res.status });
+      if (!res.ok) throw new ProviderError(`Fact-check search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
       const data = (await res.json()) as {
         claims?: Array<{ text?: string; claimReview?: Array<{ publisher?: { name?: string }; url?: string; title?: string; reviewRating?: { textualRating?: string } }> }>;
       };
@@ -44,7 +44,7 @@ export class FactCheckProvider implements SearchProvider {
       return out.slice(0, opts?.count ?? 5);
     } catch (e) {
       if (e instanceof ProviderError) {
-        safeError("FactCheckProvider failed", { queryLength: q.length, reason: e.message });
+        safeError("FactCheckProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e) });
         throw e;
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
@@ -52,7 +52,7 @@ export class FactCheckProvider implements SearchProvider {
         timeoutFailure ? "Fact-check search timed out" : `Fact-check search failed: ${e instanceof Error ? e.message : "unknown error"}`,
         timeoutFailure ? { timeout: true } : undefined
       );
-      safeError("FactCheckProvider failed", { queryLength: q.length, reason: err.message });
+      safeError("FactCheckProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
       throw err;
     }
   }

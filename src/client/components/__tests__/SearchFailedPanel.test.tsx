@@ -6,8 +6,8 @@ import type { SearchReport } from "../../../shared/types.js";
 
 const report: SearchReport = {
   providers: [
-    { provider: "duckduckgo", status: "timeout", latencyMs: 15000, sources: 0, retries: 1, error: "timed out" },
-    { provider: "wikipedia", status: "error", latencyMs: 200, sources: 0, retries: 1, httpStatus: 503, error: "status 503" },
+    { provider: "duckduckgo", status: "timeout", category: "network", latencyMs: 15000, sources: 0, retries: 1, attempts: ["timeout:ETIMEDOUT"], error: "timed out" },
+    { provider: "wikipedia", status: "error", category: "http", latencyMs: 200, sources: 0, retries: 1, attempts: ["http:503"], httpStatus: 503, error: "status 503" },
   ],
   totalFound: 0,
   uniqueCount: 0,
