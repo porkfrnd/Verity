@@ -7,8 +7,8 @@ describe("InvestigationProgress", () => {
     const { rerender } = render(<InvestigationProgress stage="searching" />);
     expect(screen.getByText(/Searching sources/)).toBeInTheDocument();
     // "Preparing verdict" must not show as done while searching
-    expect(screen.getByText(/Preparing verdict/).textContent).not.toMatch(/^✓/);
+    expect(screen.getByText("Preparing verdict").closest("li")).toHaveTextContent("○");
     rerender(<InvestigationProgress stage="done" />);
-    expect(screen.getByText(/✓ Preparing verdict/)).toBeInTheDocument();
+    expect(screen.getByText("Preparing verdict").closest("li")).toHaveTextContent("✓");
   });
 });

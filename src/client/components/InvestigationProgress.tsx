@@ -14,15 +14,17 @@ export function InvestigationProgress({ stage }: { stage: Stage }) {
   const activeIdx = order.indexOf(stage === "done" || stage === "error" ? "verdict" : stage);
   return (
     <section className="panel" aria-label="Investigation progress">
-      <h2>Investigation</h2>
+      <p className="section-label">Investigation</p>
       <ol className="progress-steps">
         {STEPS.map((s, i) => {
           const done = stage === "done" || i < activeIdx;
           const active = i === activeIdx && stage !== "done" && stage !== "error";
           return (
-            <li key={s.id} aria-current={active ? "step" : undefined}>
-              <span className={`dot ${done ? "done" : ""} ${active ? "active" : ""}`} aria-hidden="true" />
-              {done ? `✓ ${s.label}` : active ? `● ${s.label}` : `○ ${s.label}`}
+            <li key={s.id} aria-current={active ? "step" : undefined} className={done ? "is-done" : active ? "is-active" : ""}>
+              <span className="step-mark" aria-hidden="true">
+                {done ? "✓" : active ? "●" : "○"}
+              </span>
+              <span>{s.label}</span>
             </li>
           );
         })}

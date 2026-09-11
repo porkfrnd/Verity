@@ -15,10 +15,12 @@ export function History({
         const first = inv.results[0];
         return (
           <li key={inv.id}>
-            <button type="button" className="btn btn-small" onClick={() => onSelect(inv.id)}>
-              {inv.originalClaim.slice(0, 60)} · {first ? VERDICT_LABELS[first.analysis.verdict] : "—"} ·{" "}
-              {new Date(inv.createdAt).toLocaleDateString()}
-              {inv.cached ? " (cached)" : ""}
+            <button type="button" onClick={() => onSelect(inv.id)}>
+              <span className="hist-claim">{inv.originalClaim.slice(0, 80)}</span>
+              <span className="hist-meta">
+                {first ? VERDICT_LABELS[first.analysis.verdict] : "—"} · {new Date(inv.createdAt).toLocaleDateString()}
+                {inv.cached ? " · cached" : ""}
+              </span>
             </button>
           </li>
         );

@@ -40,10 +40,10 @@ export function Home() {
       <header className="app-header">
         <div className="app-header-inner">
           <div className="brand">
-            Verity <small>Search first, analyze second.</small>
+            Verity <small>search first · analyze second</small>
           </div>
           <div className="header-actions">
-            <span style={{ fontSize: 12, color: "#78716c" }}>API</span>
+            <span className="api-tag">API</span>
             <button type="button" className="btn btn-small" onClick={() => setSettingsOpen(true)}>
               Settings
             </button>
@@ -61,21 +61,63 @@ export function Home() {
           </div>
         )}
         {current && stage !== "extracting" && stage !== "searching" && (
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 14 }}>
             <section className="panel" aria-label="Claim">
-              <h2>Claim</h2>
-              <p style={{ fontSize: 15 }}>&ldquo;{current.originalClaim}&rdquo;</p>
-              {current.cached && <p style={{ fontSize: 12, color: "#78716c" }}>Served from cache — checked again on request via re-check.</p>}
+              <p className="section-label">Original claim</p>
+              <p className="claim-original">&ldquo;{current.originalClaim}&rdquo;</p>
+              {current.extraction.claims.length > 1 && (
+                <div>
+                  <p className="section-label" style={{ marginTop: 12 }}>
+                    Extracted claims
+                  </p>
+                  <ol className="claim-list">
+                    {current.extraction.claims.map((c, i) => {
+                      const verdict = current.results.find((r) => r.claim.id === c.id)?.analysis.verdict;
+                      return (
+                        <li key={c.id}>
+                          <span className="claim-num">{String(i + 1).padStart(2, "0")}</span>
+                          <span>{c.text}</span>
+                          {verdict && <span className="claim-verdict">{verdict.replace(/_/g, " ")}</span>}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              )}
+              {current.cached && (
+                <p style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--mono)", margin: "8px 0 0" }}>
+                  cached result — re-check runs a fresh search
+                </p>
+              )}
             </section>
             {current.results.map((r) => {
               const stances: Record<string, string> = {};
               for (const e of r.analysis.evidence) stances[e.sourceId] = e.stance;
+              const factChecks = r.sources.filter((s) => s.isFactCheck);
+              const webSources = r.sources.filter((s) => !s.isFactCheck);
+              const selectedStance = selected ? stances[selected.id] : undefined;
               return (
-                <div key={r.claim.id} style={{ marginTop: 12 }}>
-                  <div className="workspace">
+                <div key={r.claim.id} style={{ marginTop: 14 }}>
+                  {current.results.length > 1 && (
+                    <p style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)", margin: "0 0 6px" }}>
+                      {r.claim.id} · {r.claim.text}
+                    </p>
+                  )}
+                  <div className="workspace" style={{ marginTop: 0 }}>
                     <div>
-                      <h2 style={{ fontSize: 15, color: "#57534e" }}>Evidence</h2>
-                      <EvidenceList sources={r.sources} stances={stances} onSelect={setSelected} />
+                      <p className="section-label">
+                        Evidence · {r.sources.length} source{r.sources.length === 1 ? "" : "s"}
+                      </p>
+                      {factChecks.length > 0 && (
+                        <section aria-label="Prior fact-checks" style={{ marginBottom: 12 }}>
+                          <p className="section-label">Prior fact-checks found</p>
+                          <EvidenceList sources={factChecks} stances={stances} onSelect={setSelected} />
+                        </section>
+                      )}
+                      <section aria-label="Search evidence">
+                        {factChecks.length > 0 && <p className="section-label">Search evidence</p>}
+                        <EvidenceList sources={webSources} stances={stances} onSelect={setSelected} />
+                      </section>
                       {r.sources.length >= 2 && (
                         <button type="button" className="btn btn-small" style={{ marginTop: 8 }} onClick={() => setCompare((v) => !v)}>
                           {compare ? "Hide compare view" : "Compare evidence"}
@@ -88,24 +130,24 @@ export function Home() {
                       )}
                     </div>
                     <div>
-                      <h2 style={{ fontSize: 15, color: "#57534e" }}>Analysis</h2>
+                      <p className="section-label">Analysis</p>
                       <VerdictCard result={r} />
                       <div className="panel" style={{ marginTop: 12 }}>
-                        <h2>Contradictions</h2>
+                        <p className="section-label">Contradictions</p>
                         <ContradictionPanel items={r.contradictions} />
                       </div>
                     </div>
                   </div>
                   {selected && (
                     <div style={{ marginTop: 12 }}>
-                      <SourceDetail source={selected} onClose={() => setSelected(null)} />
+                      <SourceDetail source={selected} stance={selectedStance} onClose={() => setSelected(null)} />
                     </div>
                   )}
                 </div>
               );
             })}
-            <div className="panel" style={{ marginTop: 12 }}>
-              <h2>Recent investigations</h2>
+            <div className="panel" style={{ marginTop: 14 }}>
+              <p className="section-label">Recent investigations</p>
               <History
                 items={history}
                 onSelect={async (id) => {
