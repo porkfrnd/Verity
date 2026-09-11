@@ -4,8 +4,10 @@ import { describeError, ProviderError, type SearchProvider } from "./types.js";
 
 // Google Fact Check Tools API — optional distinct signal ("Prior fact-checks
 // found"). Requires FACTCHECK_API_KEY; returns [] when unconfigured so the
-// pipeline works without it. Configured-but-failing calls throw ProviderError
-// like every other provider (callers record it in the search report).
+// pipeline works without it. Recoverable API failures (HTTP 4xx/5xx, network
+// failure, timeout, malformed response) are logged through diagnostics and
+// likewise degrade to [] so one auxiliary provider can never break the
+// overall search. Only caller cancellation still rejects.
 export class FactCheckProvider implements SearchProvider {
   id = "factcheck";
   queryBudget = 2;
@@ -43,17 +45,23 @@ export class FactCheckProvider implements SearchProvider {
       }
       return out.slice(0, opts?.count ?? 5);
     } catch (e) {
-      if (e instanceof ProviderError) {
-        safeError("FactCheckProvider failed", { queryLength: q.length, reason: e.message, cause: describeError(e) });
-        throw e;
-      }
-      const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
-      const err = new ProviderError(
-        timeoutFailure ? "Fact-check search timed out" : `Fact-check search failed: ${e instanceof Error ? e.message : "unknown error"}`,
-        timeoutFailure ? { timeout: true } : undefined
-      );
+      // Caller cancellation is not a provider failure: preserve it so global
+      // deadlines and explicit aborts keep working.
+      if (opts?.signal?.aborted) throw e;
+      const err =
+        e instanceof ProviderError
+          ? e
+          : (() => {
+              const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
+              return new ProviderError(
+                timeoutFailure
+                  ? "Fact-check search timed out"
+                  : `Fact-check search failed: ${e instanceof Error ? e.message : "unknown error"}`,
+                timeoutFailure ? { timeout: true } : undefined
+              );
+            })();
       safeError("FactCheckProvider failed", { queryLength: q.length, reason: err.message, cause: describeError(e) });
-      throw err;
+      return [];
     }
   }
 }
