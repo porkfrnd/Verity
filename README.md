@@ -51,7 +51,15 @@ Without keys the app runs web search (DuckDuckGo) + Wikipedia + mock LLM; with `
 ## Configuring providers
 
 - **LLM:** implement `LLMProvider` (`src/server/providers/llm/types.ts`) in one new file (see `groq.ts`, `mock.ts`), then select it in `src/server/services/llmFactory.ts`. The evidence analyzer only depends on the interface.
-- **Search:** implement `SearchProvider` (`src/server/providers/search/types.ts`), register in `getSearchProviders()` (`src/server/services/search.ts`). Neutral/supporting/contradicting queries run concurrently per claim. Current providers: `duckduckgo` (default web), `searxng` (self-hosted), `wikipedia` (reference), `factcheck` (prior fact-checks, optional key), `mock` (tests/CI).
+- **Search:** implement `SearchProvider` (`src/server/providers/search/types.ts`), register in `getSearchProviders()` (`src/server/services/search.ts`). Neutral/supporting/contradicting queries run concurrently per claim. Current providers: `duckduckgo` (default web), `ddg-instant` (official Instant Answers), `wikipedia` (reference), `openalex` (scholarly), `gdelt` (news), `searxng` (self-hosted), `factcheck` (prior fact-checks, optional key), `mock` (tests/CI). Providers fail independently with per-provider reports; one retry with backoff on timeout/5xx/network errors.
+
+## Search depth
+
+Choose FLASH (fast, ~5–15s budget), DEEP (default, ~60s), or EXTENDED (~150s) next to the claim input. Depth controls the retrieval engine — query waves, provider coverage, source caps, expansion and page-fetch budgets, and a global hard deadline — never just the prompt. Strong unanimous early evidence can stop the search before the budget is spent; exhausted budgets are flagged on the result, which also records the depth and searched/unique source counts.
+
+## Confidence percentage
+
+The verdict shows a deterministic confidence percentage computed by `src/server/services/confidence.ts` from evidence stances, source quality/diversity, agreement, and contradictions — never chosen by the LLM (its output schema has no percentage surface; only stance/strength feed the formula). Same evidence always yields the same number; the UI shows the signed breakdown. The percentage is confidence *in the verdict*, not probability the claim is true. Search failure shows no percentage at all (`SEARCH FAILED` + provider statuses + retry); thin evidence shows `UNVERIFIED` worded as insufficient evidence.
 
 ## Search trade-offs (read this before deploying)
 

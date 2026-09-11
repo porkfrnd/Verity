@@ -259,6 +259,52 @@ input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
 .stale-note { font-family: var(--mono); font-size: 11.5px; color: var(--warn); background: var(--warn-soft); border: 1px solid #e8d9b5; border-radius: 4px; padding: 5px 9px; }
 .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 @media (max-width: 560px) { .compare-grid { grid-template-columns: 1fr; } }
+/* ---------- search depth selector ---------- */
+.depth-selector { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.depth-kicker { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin-right: 2px; }
+.depth-btn {
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.depth-btn:hover { border-color: var(--accent); }
+.depth-btn:active { transform: scale(0.97); }
+.depth-btn.is-active { background: var(--ink); border-color: var(--ink); color: #f8f7f4; }
+.depth-btn:disabled { opacity: 0.5; cursor: wait; }
+.depth-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.depth-record { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 8px 0 0; }
+
+/* ---------- provider progress rows ---------- */
+.provider-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-family: var(--mono); font-size: 12px; }
+.provider-row { display: flex; gap: 8px; align-items: baseline; color: var(--muted); }
+.provider-row.is-success { color: var(--ink-soft); }
+.provider-name { font-weight: 700; min-width: 92px; }
+.provider-stat { color: var(--muted); }
+.search-totals { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 8px 0 0; }
+
+/* ---------- confidence meter ---------- */
+.conf-bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 6px 0 4px; }
+.conf-bar i { display: block; height: 100%; background: var(--ink); border-radius: 4px; transition: width 200ms ease; }
+.conf-breakdown { margin: 6px 0 4px; font-size: 13px; }
+.conf-breakdown summary { cursor: pointer; font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
+.conf-breakdown ul { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-family: var(--mono); font-size: 12px; }
+.conf-breakdown li { display: flex; justify-content: space-between; gap: 12px; border-top: 1px dotted var(--line); padding-top: 3px; }
+.conf-val { font-weight: 700; }
+.conf-breakdown p { font-size: 12px; color: var(--muted); }
+.insufficient-note { font-size: 13.5px; border-left: 3px solid var(--line-strong); padding-left: 10px; color: var(--ink-soft); }
+
+/* ---------- diagnostics ---------- */
+.diagnostics { margin-top: 10px; font-size: 12.5px; }
+.diagnostics summary { cursor: pointer; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.diagnostics summary:hover { color: var(--accent); }
+.diagnostics ul { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-soft); }
+
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
 @keyframes rise {

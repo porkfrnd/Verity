@@ -1,4 +1,4 @@
-import type { Investigation } from "../../shared/types.js";
+import type { Investigation, ProviderReport, SearchDepth } from "../../shared/types.js";
 
 const KEY_STORAGE = "verity.byok.key";
 const MODEL_STORAGE = "verity.byok.model";
@@ -74,11 +74,104 @@ async function fetchJson(input: string, init?: RequestInit): Promise<Response> {
   }
 }
 
-export async function investigateClaim(claim: string): Promise<Investigation> {
+export async function investigateClaim(claim: string, depth?: SearchDepth): Promise<Investigation> {
   const res = await fetchJson("/api/investigate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ claim, apiKey: getStoredKey() || undefined, model: getStoredModel() || undefined }),
+    body: JSON.stringify({ claim, apiKey: getStoredKey() || undefined, model: getStoredModel() || undefined, depth }),
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as Investigation;
+}
+
+export type StreamEvent =
+  | { type: "provider"; claimId: string; wave: number; report: ProviderReport }
+  | { type: "dedup"; claimId: string; totalFound: number; uniqueCount: number }
+  | { type: "early_stop"; claimId: string; reason: string }
+  | { type: "budget_exhausted"; claimId: string }
+  | { type: "analyzing"; claimId: string }
+  | { type: "claim"; claimId: string; verdict: string; searchFailed: boolean }
+  | { type: "done"; investigation: Investigation }
+  | { type: "error"; message: string };
+
+/** Parse one SSE buffer into complete events (exported for tests). */
+export function parseSseBuffer(buffer: string): { events: Array<{ type: string; data: unknown }>; rest: string } {
+  const events: Array<{ type: string; data: unknown }> = [];
+  const frames = buffer.split("\n\n");
+  const rest = frames.pop() ?? "";
+  for (const frame of frames) {
+    let type = "message";
+    let data = "";
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event:")) type = line.slice(6).trim();
+      else if (line.startsWith("data:")) data += line.slice(5).trim();
+    }
+    if (!data) continue;
+    try {
+      events.push({ type, data: JSON.parse(data) });
+    } catch {
+      // Ignore malformed frames; the stream continues.
+    }
+  }
+  return { events, rest };
+}
+
+/**
+ * Stream an investigation, invoking onEvent for live progress. Resolves with
+ * the final investigation on `done`, rejects on `error`/abort/failure.
+ */
+export async function investigateClaimStream(
+  claim: string,
+  depth: SearchDepth,
+  onEvent: (e: StreamEvent) => void,
+  opts?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<Investigation> {
+  const timeout = AbortSignal.timeout(opts?.timeoutMs ?? 170_000);
+  const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+  let res: Response;
+  try {
+    res = await fetch("/api/investigate/stream", {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify({ claim, apiKey: getStoredKey() || undefined, model: getStoredModel() || undefined, depth }),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
+    throw new Error(API_UNREACHABLE_MESSAGE);
+  }
+  if (!res.ok) throw await parseError(res);
+  if (!res.body) throw new Error(API_UNREACHABLE_MESSAGE);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        const parsed = parseSseBuffer(buffer);
+        buffer = parsed.rest;
+        for (const { type, data } of parsed.events) {
+          if (type === "done") return (data as { investigation?: Investigation }).investigation ?? (data as unknown as Investigation);
+          if (type === "error") throw new Error((data as { message?: string }).message ?? "Investigation failed.");
+          onEvent({ type: type as StreamEvent["type"], ...(data as object) } as StreamEvent);
+        }
+      }
+      if (done) break;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  // Server closed the stream without a verdict — fall back to plain POST upstream.
+  throw new Error("STREAM_INCOMPLETE");
+}
+
+export async function recheckInvestigation(id: string): Promise<Investigation> {
+  const res = await fetchJson(`/api/investigations/${encodeURIComponent(id)}/recheck`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey: getStoredKey() || undefined, model: getStoredModel() || undefined }),
   });
   if (!res.ok) throw await parseError(res);
   return (await res.json()) as Investigation;

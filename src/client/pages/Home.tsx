@@ -1,23 +1,31 @@
 import { useState } from "react";
-import type { Investigation, Source } from "../../shared/types.js";
+import type { Investigation, SearchDepth, Source } from "../../shared/types.js";
 import { useInvestigation } from "../hooks/useInvestigation.js";
-import { fetchHistoryItem } from "../services/api.js";
+import { fetchHistoryItem, recheckInvestigation } from "../services/api.js";
 import { ClaimInput } from "../components/ClaimInput.js";
 import { InvestigationProgress } from "../components/InvestigationProgress.js";
 import { VerdictCard } from "../components/VerdictCard.js";
+import { SearchFailedPanel } from "../components/SearchFailedPanel.js";
 import { EvidenceList, SourceDetail } from "../components/EvidenceList.js";
 import { ContradictionPanel } from "../components/ContradictionPanel.js";
 import { CompareView } from "../components/CompareView.js";
 import { Settings } from "../components/Settings.js";
 import { History } from "../components/History.js";
 
+const DEPTHS: Array<{ id: SearchDepth; label: string; hint: string }> = [
+  { id: "flash", label: "Flash", hint: "Fast · ~5–15s" },
+  { id: "deep", label: "Deep", hint: "Balanced · recommended" },
+  { id: "extended", label: "Extended", hint: "Thorough · slower" },
+];
+
 export function Home() {
-  const { stage, investigation, error, run } = useInvestigation();
+  const { stage, depth, setDepth, providers, counts, investigation, error, run } = useInvestigation();
   const [history, setHistory] = useState<Investigation[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selected, setSelected] = useState<Source | null>(null);
   const [compare, setCompare] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const pending = stage !== "idle" && stage !== "done" && stage !== "error";
 
   const current: Investigation | null =
@@ -28,6 +36,21 @@ export function Home() {
     setCompare(false);
     setSelectedId(null);
     await run(claim);
+  }
+
+  async function handleRetry(invId: string) {
+    setRetrying(true);
+    try {
+      const fresh = await recheckInvestigation(invId);
+      setHistory((h) => [...h, fresh]);
+      setSelectedId(fresh.id);
+      setSelected(null);
+    } catch {
+      // The error box below shows investigation errors; retry failures surface
+      // as a history no-op rather than a crash.
+    } finally {
+      setRetrying(false);
+    }
   }
 
   // Track history when a new investigation lands
@@ -52,8 +75,32 @@ export function Home() {
       </header>
       <main className="main">
         <ClaimInput pending={pending} onSubmit={handleSubmit} />
+        <div className="depth-selector" role="group" aria-label="Search depth">
+          <span className="depth-kicker">Search depth</span>
+          {DEPTHS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              className={`depth-btn${depth === d.id ? " is-active" : ""}`}
+              aria-pressed={depth === d.id}
+              disabled={pending}
+              onClick={() => setDepth(d.id)}
+              title={d.hint}
+            >
+              {d.label}
+            </button>
+          ))}
+          <span className="depth-hint">{DEPTHS.find((d) => d.id === depth)?.hint}</span>
+        </div>
         <div style={{ marginTop: 12 }}>
-          <InvestigationProgress stage={stage} />
+          <InvestigationProgress
+            stage={stage}
+            providers={providers}
+            totalFound={counts.totalFound}
+            uniqueCount={counts.uniqueCount}
+            budgetExhausted={counts.budgetExhausted}
+            earlyStopped={counts.earlyStopped}
+          />
         </div>
         {error && (
           <div className="error-box" role="alert" style={{ marginTop: 12 }}>
@@ -84,11 +131,10 @@ export function Home() {
                   </ol>
                 </div>
               )}
-              {current.cached && (
-                <p style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--mono)", margin: "8px 0 0" }}>
-                  cached result — re-check runs a fresh search
-                </p>
-              )}
+              <p className="depth-record">
+                Search depth: {current.depth.toUpperCase()}
+                {current.cached ? " · cached result — re-check runs a fresh search" : ""}
+              </p>
             </section>
             {current.results.map((r) => {
               const stances: Record<string, string> = {};
@@ -96,6 +142,7 @@ export function Home() {
               const factChecks = r.sources.filter((s) => s.isFactCheck);
               const webSources = r.sources.filter((s) => !s.isFactCheck);
               const selectedStance = selected ? stances[selected.id] : undefined;
+              const showDiagnostics = r.searchReport.providers.length > 0;
               return (
                 <div key={r.claim.id} style={{ marginTop: 14 }}>
                   {current.results.length > 1 && (
@@ -106,7 +153,7 @@ export function Home() {
                   <div className="workspace" style={{ marginTop: 0 }}>
                     <div>
                       <p className="section-label">
-                        Evidence · {r.sources.length} source{r.sources.length === 1 ? "" : "s"}
+                        Evidence · {r.searchReport.uniqueCount} unique ({r.searchReport.totalFound} found)
                       </p>
                       {factChecks.length > 0 && (
                         <section aria-label="Prior fact-checks" style={{ marginBottom: 12 }}>
@@ -128,14 +175,36 @@ export function Home() {
                           <CompareView sources={r.sources} />
                         </div>
                       )}
+                      {showDiagnostics && (
+                        <details className="diagnostics">
+                          <summary>Search diagnostics ({r.searchReport.providers.length} providers)</summary>
+                          <ul>
+                            {r.searchReport.providers.map((p) => (
+                              <li key={p.provider}>
+                                <strong>{p.provider}</strong> · {p.status} · {(p.latencyMs / 1000).toFixed(1)}s ·{" "}
+                                {p.sources} sources · {p.retries} retr{p.retries === 1 ? "y" : "ies"}
+                                {typeof p.httpStatus === "number" ? ` · HTTP ${p.httpStatus}` : ""}
+                                {p.error ? ` · ${p.error}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                          {r.searchReport.budgetExhausted && <p>Search budget exhausted — analyzed what was collected.</p>}
+                        </details>
+                      )}
                     </div>
                     <div>
                       <p className="section-label">Analysis</p>
-                      <VerdictCard result={r} />
-                      <div className="panel" style={{ marginTop: 12 }}>
-                        <p className="section-label">Contradictions</p>
-                        <ContradictionPanel items={r.contradictions} />
-                      </div>
+                      {r.searchFailed ? (
+                        <SearchFailedPanel report={r.searchReport} retrying={retrying} onRetry={() => handleRetry(current.id)} />
+                      ) : (
+                        <VerdictCard result={r} />
+                      )}
+                      {!r.searchFailed && (
+                        <div className="panel" style={{ marginTop: 12 }}>
+                          <p className="section-label">Contradictions</p>
+                          <ContradictionPanel items={r.contradictions} />
+                        </div>
+                      )}
                     </div>
                   </div>
                   {selected && (

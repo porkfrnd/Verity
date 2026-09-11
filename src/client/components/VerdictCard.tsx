@@ -1,7 +1,43 @@
-import { VERDICT_LABELS, type ClaimVerdict, type Confidence } from "../../shared/types.js";
+import { VERDICT_LABELS, type ClaimVerdict, type ConfidenceScore } from "../../shared/types.js";
 
-function confidenceLevel(c: Confidence): number {
-  return c === "high" ? 3 : c === "medium" ? 2 : 1;
+const BREAKDOWN_LABELS: Record<string, string> = {
+  evidence_strength: "Evidence strength",
+  source_quality: "Source quality",
+  source_independence: "Source independence",
+  cross_source_agreement: "Cross-source agreement",
+  directness_coverage: "Directness & coverage",
+  primary_sources: "Primary sources",
+  freshness: "Freshness",
+  contradictions: "Contradictions",
+  bounds_clamp: "Bounds",
+};
+
+function ConfidenceMeter({ score }: { score: ConfidenceScore }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ fontSize: 30, fontWeight: 750, letterSpacing: "-0.02em" }} aria-label={`${score.percentage}% confidence in the verdict`}>
+          {score.percentage}%
+        </span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--muted)" }}>confidence in this verdict</span>
+      </div>
+      <div className="conf-bar" role="img" aria-label={`Confidence meter: ${score.percentage} out of 100`}>
+        <i style={{ width: `${score.percentage}%` }} />
+      </div>
+      <details className="conf-breakdown">
+        <summary>Why {score.percentage}%? (deterministic breakdown)</summary>
+        <ul>
+          {Object.entries(score.breakdown).map(([k, v]) => (
+            <li key={k}>
+              <span>{BREAKDOWN_LABELS[k] ?? k}</span>
+              <span className="conf-val">{v > 0 ? `+${v}` : v}</span>
+            </li>
+          ))}
+        </ul>
+        <p>Computed by Verity's scoring formula from the evidence above — never chosen by the AI. Same evidence always yields the same number.</p>
+      </details>
+    </div>
+  );
 }
 
 export function VerdictCard({ result }: { result: ClaimVerdict }) {
@@ -9,21 +45,18 @@ export function VerdictCard({ result }: { result: ClaimVerdict }) {
   const supports = analysis.evidence.filter((e) => e.stance === "supports");
   const contradicts = analysis.evidence.filter((e) => e.stance === "contradicts");
   const context = analysis.evidence.filter((e) => e.stance !== "supports" && e.stance !== "contradicts");
-  const level = confidenceLevel(analysis.confidence);
 
   return (
     <article className="panel verdict-block" aria-label={`Verdict for ${claim.text}`}>
       <p className="verdict-kicker">Verdict</p>
       <p className={`verdict-value verdict-${analysis.verdict}`}>{VERDICT_LABELS[analysis.verdict]}</p>
-      <div className="confidence-row" aria-label={`Confidence: ${analysis.confidence}`}>
-        <span>confidence</span>
-        <span className="conf-segments" aria-hidden="true">
-          {[1, 2, 3].map((i) => (
-            <i key={i} className={i <= level ? "on" : ""} />
-          ))}
-        </span>
-        <span>{analysis.confidence}</span>
-      </div>
+      {analysis.verdict === "unverified" && (
+        <p className="insufficient-note">
+          <strong>Insufficient evidence</strong> — search completed, but the retrieved sources did not provide enough
+          reliable evidence to reach a verdict. This is not confidence that the claim is false.
+        </p>
+      )}
+      {result.confidence && <ConfidenceMeter score={result.confidence} />}
       <p className="verdict-summary">{analysis.summary}</p>
       {result.staleNote && <p className="stale-note">{result.staleNote}</p>}
       {analysis.evidence.length === 0 ? (
