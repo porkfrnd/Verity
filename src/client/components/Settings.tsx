@@ -14,7 +14,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
       setModel(getStoredModel() || "openai/gpt-oss-120b");
       fetchHealth()
         .then((h) => setHealth(`${h.llm.provider} · ${h.llm.message}`))
-        .catch(() => setHealth("Health check failed"));
+        .catch((e: unknown) => setHealth(e instanceof Error ? e.message : "Health check failed"));
     }
   }, [open ]);
 

@@ -13,6 +13,18 @@ npm run dev         # UI on :5173 (proxies /api)
 
 Open http://localhost:5173, enter a claim, press **Investigate**.
 
+> Both servers must run: `npm run dev:server` (API on :3000) **and**
+> `npm run dev` (UI on :5173) in two terminals. The UI calls the API
+> through `/api/*`; nothing is fetched from the browser bundle.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Cannot reach the API server…` / vite `http proxy error … ECONNREFUSED /api/…` | The API server isn't running | Run `npm run dev:server` in a second terminal and retry |
+| Verdict stuck at `UNVERIFIED` with `…search failed…` | No network or search providers blocked | Check connectivity; CI/tests use the offline mock (`NODE_ENV=test`) |
+| `npm run build` ships a huge JS bundle | `NODE_ENV=development` leaked into the build env | Do not set `NODE_ENV` in `.env` (see note below) |
+
 ## Env vars
 
 | Var | Required | Purpose |
@@ -62,7 +74,7 @@ Open **Settings** → paste a Groq key → **Test connection** → run an invest
 
 ## Deployment
 
-Any Node 18+ host: set env vars, `npm ci && npm run build`, run `npm start` behind HTTPS. No database; history/cache are in-memory session scope. Never set real keys in the client bundle — backend-only. Do not set `NODE_ENV=development` in production (a dev React bundle would be shipped).
+Any Node 20.3+ host: set env vars, `npm ci && npm run build`, run `npm start` behind HTTPS. No database; history/cache are in-memory session scope. Never set real keys in the client bundle — backend-only. Do not set `NODE_ENV=development` in production (a dev React bundle would be shipped).
 
 ## Verdicts
 
