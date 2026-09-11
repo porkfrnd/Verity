@@ -205,6 +205,8 @@ export interface SearchResultItem {
 export interface SearchOptions {
   count?: number;
   signal?: AbortSignal;
+  /** Per-request provider budget in ms (mode-derived). Providers fall back to their default. */
+  timeoutMs?: number;
 }
 
 export const VERDICT_LABELS: Record<Verdict, string> = {

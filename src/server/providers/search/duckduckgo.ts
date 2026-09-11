@@ -106,6 +106,37 @@ export function resetDuckDuckGoSpacing(): void {
   lastRequestAt = 0;
 }
 
+/** Bounded structural probe of a block-status page (§8: indicators only, never a dump). */
+async function blockDetail(res: Response): Promise<Record<string, string | number | boolean>> {
+  const base = {
+    httpStatus: res.status,
+    contentType: (res.headers.get("content-type") ?? "").slice(0, 60),
+    finalHost: (() => {
+      try {
+        return new URL(res.url).hostname;
+      } catch {
+        return "(unknown)";
+      }
+    })(),
+  };
+  const declared = Number(res.headers.get("content-length") ?? "NaN");
+  let sample = "";
+  try {
+    // Refuse to slurp huge bodies just to confirm a block page.
+    if (!Number.isFinite(declared) || declared <= 65536) {
+      sample = (await res.text()).slice(0, 16384);
+    }
+  } catch {
+    sample = "";
+  }
+  return {
+    ...base,
+    bodyLength: Number.isFinite(declared) ? declared : sample.length,
+    hasAnomaly: /captcha|challenge|unusual traffic|verify you are|attention required|denied|forbidden/i.test(sample),
+    pageTitle: /<title>([^<]{0,120})/i.exec(sample)?.[1]?.trim() || "(none)",
+  };
+}
+
 /**
  * Default web search: DuckDuckGo HTML results, scraped — no API key.
  * Free and keyless, but fragile by nature (markup can change without notice)
@@ -125,7 +156,7 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
     this.timeoutMs = opts?.timeoutMs ?? 15000;
   }
 
-  async search(query: string, opts?: { count?: number; signal?: AbortSignal }): Promise<SearchResultItem[]> {
+  async search(query: string, opts?: { count?: number; signal?: AbortSignal; timeoutMs?: number }): Promise<SearchResultItem[]> {
     const q = query.trim();
     if (!q) return [];
     const cached = getCachedQuery(q);
@@ -136,7 +167,8 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
       await new Promise((r) => setTimeout(r, this.minGapMs - gap));
     }
     if (opts?.signal?.aborted) throw new ProviderError("DuckDuckGo search aborted", { timeout: true });
-    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const budgetMs = opts?.timeoutMs ?? this.timeoutMs;
+    const timeout = AbortSignal.timeout(budgetMs);
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     try {
       const res = await this.fetchFn(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
@@ -146,7 +178,17 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
           Accept: "text/html",
         },
       });
-      if (!res.ok) throw new ProviderError(`DuckDuckGo search failed with status ${res.status}`, { httpStatus: res.status, category: "http" });
+      if (!res.ok || res.status === 202) {
+        // 202 from the HTML endpoint is DDG's throttle/challenge response
+        // (small page, no result nodes) — a block, not a parse problem.
+        // Verify structurally (bounded probe) rather than assuming.
+        const blocked = res.status === 202 || res.status === 429;
+        throw new ProviderError(`DuckDuckGo search failed with status ${res.status}`, {
+          httpStatus: res.status,
+          category: blocked ? "blocked" : "http",
+          detail: blocked ? await blockDetail(res) : undefined,
+        });
+      }
       const html = await res.text();
       const results = parseDuckDuckGoHtml(html, {
         httpStatus: res.status,
@@ -162,7 +204,7 @@ export class DuckDuckGoSearchProvider implements SearchProvider {
       }
       const timeoutFailure = e instanceof DOMException && e.name === "AbortError";
       const err = new ProviderError(
-        timeoutFailure ? `DuckDuckGo search timed out after ${this.timeoutMs}ms` : `DuckDuckGo search failed: ${e instanceof Error ? e.message : "unknown error"}`,
+        timeoutFailure ? `DuckDuckGo search timed out after ${budgetMs}ms` : `DuckDuckGo search failed: ${e instanceof Error ? e.message : "unknown error"}`,
         timeoutFailure ? { timeout: true } : undefined
       );
       // Log length, never content: queries are user claims (privacy).

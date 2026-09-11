@@ -4,6 +4,19 @@ import { detectContradictions, heuristicStance } from "./contradiction.js";
 export interface SearchModeConfig {
   /** Hard wall-clock budget for the whole search step (queries + fetches). */
   searchBudgetMs: number;
+  /**
+   * Per-attempt provider budget, enforced per request. Derived from measured
+   * baselines (cold ~6–7s, warm ~1s here): must clear p95 with margin, and
+   * stay above undici's internal 10s connect timeout. Flash fails fast by
+   * design; extended allows slow origins more room. Never a prompt hint.
+   */
+  providerBudgetMs: number;
+  /**
+   * Max in-flight search requests. Measured: ≤5 concurrent → 100% success;
+   * 10 concurrent → 40% connect-timeout failures. Bounds connection/DNS
+   * pressure instead of "waiting longer".
+   */
+  maxConcurrentJobs: number;
   /** Max queries in wave 1 (neutral) and wave 2 (supporting/contradicting + variants). */
   wave1Queries: number;
   wave2Queries: number;
@@ -29,6 +42,8 @@ export interface SearchModeConfig {
 export const SEARCH_MODES: Record<SearchDepth, SearchModeConfig> = {
   flash: {
     searchBudgetMs: 15_000,
+    providerBudgetMs: 12_000,
+    maxConcurrentJobs: 3,
     wave1Queries: 3,
     wave2Queries: 0,
     maxSources: 8,
@@ -41,6 +56,8 @@ export const SEARCH_MODES: Record<SearchDepth, SearchModeConfig> = {
   },
   deep: {
     searchBudgetMs: 60_000,
+    providerBudgetMs: 15_000,
+    maxConcurrentJobs: 6,
     wave1Queries: 3,
     wave2Queries: 4,
     maxSources: 20,
@@ -52,6 +69,8 @@ export const SEARCH_MODES: Record<SearchDepth, SearchModeConfig> = {
   },
   extended: {
     searchBudgetMs: 150_000,
+    providerBudgetMs: 25_000,
+    maxConcurrentJobs: 8,
     wave1Queries: 4,
     wave2Queries: 8,
     maxSources: 40,

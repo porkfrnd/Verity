@@ -45,6 +45,10 @@ export interface SearchRunOptions {
   maxAttempts?: number;
   /** Base backoff between attempts. Default 400ms (0 in tests). */
   retryDelayMs?: number;
+  /** Per-attempt provider budget, forwarded as the request timeout. No default (providers use theirs). */
+  providerBudgetMs?: number;
+  /** Max in-flight search requests across all providers. Default: unbounded. */
+  maxConcurrentJobs?: number;
   /** Per-provider report callback (powers live progress + SSE). */
   onProvider?: (report: ProviderReport) => void;
 }
@@ -82,7 +86,10 @@ interface JobOutcome {
 async function runJob(
   provider: SearchProvider,
   query: string,
-  opts: Required<Pick<SearchRunOptions, "count" | "maxAttempts" | "retryDelayMs">> & { signal?: AbortSignal }
+  opts: Required<Pick<SearchRunOptions, "count" | "maxAttempts" | "retryDelayMs">> & {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  }
 ): Promise<JobOutcome> {
   const started = Date.now();
   let retries = 0;
@@ -91,27 +98,34 @@ async function runJob(
   // ignores its signal cannot stall the investigation forever. The thunk
   // defers invocation so a pre-aborted signal never starts (or orphans) work.
   const withCancel = <T>(fn: () => Promise<T>): Promise<T> => {
+    // Message says cancelled (not timed out): the flag stays timeout:true so
+    // downstream status mapping still yields "timeout", while the attempts
+    // fingerprint (see below) records the true origin.
+    const cancelledError = () =>
+      new ProviderError(`${provider.id} search cancelled (global deadline)`, { timeout: true });
     if (!opts.signal) return fn();
-    if (opts.signal.aborted) {
-      return Promise.reject(new ProviderError(`${provider.id} search aborted`, { timeout: true }));
-    }
+    if (opts.signal.aborted) return Promise.reject(cancelledError());
     return Promise.race([
       fn(),
       new Promise<never>((_, reject) => {
-        opts.signal!.addEventListener(
-          "abort",
-          () => reject(new ProviderError(`${provider.id} search aborted`, { timeout: true })),
-          { once: true }
-        );
+        opts.signal!.addEventListener("abort", () => reject(cancelledError()), { once: true });
       }),
     ]);
   };
   for (let attempt = 0; ; attempt++) {
     try {
-      const items = await withCancel(() => provider.search(query, { count: opts.count, signal: opts.signal }));
+      const items = await withCancel(() =>
+        provider.search(query, { count: opts.count, signal: opts.signal, timeoutMs: opts.timeoutMs })
+      );
       return { provider: provider.id, items, latencyMs: Date.now() - started, retries, attempts, error: null };
     } catch (e) {
-      attempts.push(causeFingerprint(e));
+      // §6: an abort observed while OUR signal is aborted is global-deadline
+      // cancellation, not a provider timeout. Anything else keeps the
+      // provider's own classification (timeout/http/parse).
+      const cancelled =
+        (e instanceof DOMException && e.name === "AbortError") ||
+        (e instanceof ProviderError && !!e.timeout);
+      attempts.push(opts.signal?.aborted && cancelled ? "cancelled (global deadline)" : causeFingerprint(e));
       if (shouldRetry(e, attempt, opts.maxAttempts, opts.signal)) {
         retries++;
         const delay = opts.retryDelayMs * 2 ** attempt;
@@ -175,40 +189,74 @@ export async function runSearchAllWith(
   const count = opts?.count ?? 5;
   const maxAttempts = opts?.maxAttempts ?? 2;
   const retryDelayMs = opts?.retryDelayMs ?? 400;
-  const byProvider = new Map<string, { provider: SearchProvider; jobs: Array<Promise<JobOutcome>> }>();
+  const limit = Math.max(1, opts?.maxConcurrentJobs ?? Number.POSITIVE_INFINITY);
+  const providerBudgetMs = opts?.providerBudgetMs;
+  // Flat deferred task list: jobs only start when a pool worker picks them
+  // up, so in-flight requests never exceed the mode's bound no matter how
+  // many providers × queries are configured.
+  const tasks: Array<{ provider: SearchProvider; query: string; index: number }> = [];
   for (const p of providers) {
     const qs = p.queryBudget ? queries.slice(0, p.queryBudget) : queries;
-    const entry = { provider: p, jobs: qs.map((q) => runJob(p, q, { count, maxAttempts, retryDelayMs, signal: opts?.signal })) };
-    const existing = byProvider.get(p.id);
-    if (existing) existing.jobs.push(...entry.jobs);
-    else byProvider.set(p.id, entry);
+    for (const q of qs) tasks.push({ provider: p, query: q, index: tasks.length });
+  }
+  const outcomes = new Array<JobOutcome | undefined>(tasks.length);
+  const providerIdx = new Map<string, number[]>();
+  for (const t of tasks) {
+    const list = providerIdx.get(t.provider.id) ?? [];
+    list.push(t.index);
+    providerIdx.set(t.provider.id, list);
   }
   const reports: ProviderReport[] = [];
-  const results: SearchResultItem[] = [];
   const errors: string[] = [];
   const providersUsed: string[] = [];
-  // Await per provider so each provider's report emits as soon as IT settles
-  // (powers live progress); a slow provider never blocks other reports.
-  await Promise.all(
-    [...byProvider.entries()].map(async ([id, entry]) => {
-      const jobs = await Promise.all(entry.jobs);
-      const report = toReport(id, jobs);
-      reports.push(report);
-      for (const j of jobs) {
-        if (j.error === null) {
-          providersUsed.push(id);
-          results.push(...j.items);
-        } else {
-          // Typed provider error: surfaced in reports + verdict summary,
-          // never a silent empty result and never a raw stack trace.
-          // The cause breakdown (§1) is what answers "why exactly did fetch fail?".
-          safeError("Search provider failed", { provider: id, cause: describeError(j.error), attempts: j.attempts });
-          errors.push(`${id}: ${j.error instanceof Error ? j.error.message : "search failed"}`);
-        }
+  const settledProviders = new Set<string>();
+  const settleProvider = (id: string) => {
+    if (settledProviders.has(id)) return;
+    const idxs = providerIdx.get(id) ?? [];
+    if (!idxs.every((j) => outcomes[j] !== undefined)) return;
+    settledProviders.add(id);
+    const jobs = idxs.map((j) => outcomes[j] as JobOutcome);
+    const report = toReport(id, jobs);
+    reports.push(report);
+    for (const j of jobs) {
+      if (j.error === null) {
+        providersUsed.push(id);
+      } else {
+        // Typed provider error: surfaced in reports + verdict summary,
+        // never a silent empty result and never a raw stack trace.
+        // The cause breakdown (§1) is what answers "why exactly did fetch fail?".
+        safeError("Search provider failed", { provider: id, cause: describeError(j.error), attempts: j.attempts });
+        errors.push(`${id}: ${j.error instanceof Error ? j.error.message : "search failed"}`);
       }
-      opts?.onProvider?.(report);
-    })
+    }
+    opts?.onProvider?.(report);
+  };
+  // Await per-pool-worker; each provider's report emits as soon as IT settles
+  // (powers live progress); a slow provider never blocks other reports.
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < tasks.length) {
+      const i = cursor++;
+      const t = tasks[i];
+      outcomes[i] = await runJob(t.provider, t.query, {
+        count,
+        maxAttempts,
+        retryDelayMs,
+        signal: opts?.signal,
+        timeoutMs: providerBudgetMs,
+      });
+      settleProvider(t.provider.id);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, Math.max(tasks.length, 1)) }, () => worker())
   );
+  // Index-ordered assembly: completion order affects events only, never the
+  // result set (deterministic downstream).
+  const results: SearchResultItem[] = [];
+  for (const o of outcomes) {
+    if (o && o.error === null) results.push(...o.items);
+  }
   reports.sort((a, b) => a.provider.localeCompare(b.provider));
   return { results, providersUsed: [...new Set(providersUsed)], errors, reports };
 }

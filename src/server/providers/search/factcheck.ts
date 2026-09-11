@@ -17,11 +17,11 @@ export class FactCheckProvider implements SearchProvider {
     this.apiKey = apiKey ?? process.env.FACTCHECK_API_KEY ?? "";
     this.fetchFn = opts?.fetchFn ?? fetch;
   }
-  async search(query: string, opts?: { count?: number; signal?: AbortSignal }): Promise<SearchResultItem[]> {
+  async search(query: string, opts?: { count?: number; signal?: AbortSignal; timeoutMs?: number }): Promise<SearchResultItem[]> {
     const q = query.trim();
     if (!q || !this.apiKey) return [];
     if (opts?.signal?.aborted) throw new ProviderError("Fact-check search aborted", { timeout: true });
-    const timeout = AbortSignal.timeout(15000);
+    const timeout = AbortSignal.timeout(opts?.timeoutMs ?? 15000);
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     try {
       const url = `https://factchecktools.googleapis.com/v1alpha1/claims:search?query=${encodeURIComponent(q)}&key=${this.apiKey}`;

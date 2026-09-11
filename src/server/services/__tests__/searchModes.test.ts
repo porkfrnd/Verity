@@ -58,6 +58,17 @@ describe("search depth modes", () => {
     expect(SEARCH_MODES.extended.maxSources).toBeLessThanOrEqual(60);
   });
 
+  it("provider budgets and concurrency bounds are ordered and sane", () => {
+    // Derived from measured baselines (cold ~6-7s, ≤5 concurrent stable):
+    // budgets clear p95 with margin and stay above undici's 10s connect cap.
+    expect(SEARCH_MODES.flash.providerBudgetMs).toBeGreaterThanOrEqual(10_000);
+    expect(SEARCH_MODES.flash.providerBudgetMs).toBeLessThanOrEqual(SEARCH_MODES.deep.providerBudgetMs);
+    expect(SEARCH_MODES.deep.providerBudgetMs).toBeLessThanOrEqual(SEARCH_MODES.extended.providerBudgetMs);
+    expect(SEARCH_MODES.flash.maxConcurrentJobs).toBeLessThanOrEqual(5);
+    expect(SEARCH_MODES.deep.maxConcurrentJobs).toBeLessThanOrEqual(8);
+    expect(SEARCH_MODES.extended.maxConcurrentJobs).toBeLessThanOrEqual(10);
+  });
+
   it("early stopping fires on unanimous strong multi-domain agreement", () => {
     const sources = [
       src("source-1", "a.gov", "supports", "government"),

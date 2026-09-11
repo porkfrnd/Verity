@@ -76,7 +76,15 @@ Without keys the app runs web search (DuckDuckGo) + Wikipedia + mock LLM; with `
 
 ## Search depth
 
-Choose FLASH (fast, ~5–15s budget), DEEP (default, ~60s), or EXTENDED (~150s) next to the claim input. Depth controls the retrieval engine — query waves, provider coverage, source caps, expansion and page-fetch budgets, and a global hard deadline — never just the prompt. Strong unanimous early evidence can stop the search before the budget is spent; exhausted budgets are flagged on the result, which also records the depth and searched/unique source counts.
+Choose FLASH (fast, ~5–15s budget), DEEP (default, ~60s), or EXTENDED (~150s) next to the claim input. Depth controls the retrieval engine — query waves, provider coverage, source caps, expansion and page-fetch budgets, per-request provider budgets, max in-flight requests, and a global hard deadline — never just the prompt. Current budgets (derived from measured baselines: cold ~6–7s, warm ~1s, ≤5 concurrent stable): Current budgets (derived from measured baselines: cold ~6–7s, warm ~1s, ≤5 concurrent stable):
+
+| Mode | Queries | Sources | In-flight | Provider budget | Global deadline |
+|---|---|---|---|---|---|
+| FLASH | ≤3, 1 wave | ≤8 | 3 | 12s | 15s |
+| DEEP | ≤7, 2 waves | ≤20 | 6 | 15s | 60s |
+| EXTENDED | ≤12, 2 waves + variants | ≤40 | 8 | 25s | 150s |
+
+Strong unanimous early evidence can stop the search before the budget is spent; exhausted budgets are flagged on the result, which also records the depth and searched/unique source counts.
 
 ## Confidence percentage
 

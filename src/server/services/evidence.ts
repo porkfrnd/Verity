@@ -169,6 +169,8 @@ export async function investigate(rawClaim: string, opts?: InvestigateOptions): 
         count: mode.perQueryCount,
         signal: deadlineSignal,
         retryDelayMs: 400,
+        maxConcurrentJobs: mode.maxConcurrentJobs,
+        providerBudgetMs: mode.providerBudgetMs,
         onProvider: (report) => {
           allReports.push(report);
           emit?.({ type: "provider", claimId: claim.id, wave: waveIndex + 1, report });

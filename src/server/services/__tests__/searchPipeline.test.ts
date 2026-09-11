@@ -153,4 +153,55 @@ describe("fault-tolerant search orchestration", () => {
     expect(r.error).toMatch(/timed out/);
     expect(r.retries).toBe(0);
   });
+
+  it("bounds in-flight requests to maxConcurrentJobs", async () => {    let inFlight = 0;
+    let peak = 0;
+    const gate = (id: string): SearchProvider => ({
+      id,
+      search: async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight--;
+        return [{ title: id, url: `https://${id}.example.com/` }];
+      },
+    });
+    const providers = [gate("a"), gate("b"), gate("c"), gate("d")];
+    const out = await runSearchAllWith(providers, ["q1", "q2", "q3"], { ...OPTS, maxConcurrentJobs: 3 });
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(out.results).toHaveLength(12);
+  });
+
+  it("clamps non-positive concurrency to serial execution (never a silent no-op)", async () => {
+    const good = stubProvider("good", ["ok"]);
+    const out = await runSearchAllWith([good.provider], ["q1", "q2"], { ...OPTS, maxConcurrentJobs: 0 });
+    expect(out.results).toHaveLength(4);
+    expect(out.reports[0].status).toBe("success");
+  });
+
+  it("forwards the mode provider budget to every provider request", async () => {
+    const seen: Array<number | undefined> = [];
+    const probe: SearchProvider = {
+      id: "probe",
+      search: async (_q: string, opts?: { timeoutMs?: number }) => {
+        seen.push(opts?.timeoutMs);
+        return [];
+      },
+    };
+    await runSearchAllWith([probe], ["q1", "q2"], { ...OPTS, providerBudgetMs: 12_000 });
+    expect(seen).toEqual([12_000, 12_000]);
+  });
+
+  it("distinguishes global-deadline cancellation from provider timeouts", async () => {
+    const hanging: SearchProvider = { id: "hang", search: () => new Promise(() => {}) };
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 30);
+    const out = await runSearchAllWith([hanging], ["q1"], { ...OPTS, signal: controller.signal });
+    expect(out.reports[0].attempts).toContain("cancelled (global deadline)");
+    // A provider-side timeout with a live signal keeps the timeout label.
+    const slow = stubProvider("slow", ["timeout"]);
+    const out2 = await runSearchAllWith([slow.provider], ["q1"], { ...OPTS, maxAttempts: 1 });
+    expect(out2.reports[0].attempts).toEqual(["timeout"]);
+    expect(out2.reports[0].status).toBe("timeout");
+  });
 });

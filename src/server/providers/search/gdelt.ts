@@ -22,11 +22,11 @@ export class GdeltSearchProvider implements SearchProvider {
     this.fetchFn = opts?.fetchFn ?? fetch;
   }
 
-  async search(query: string, opts?: { count?: number; signal?: AbortSignal }): Promise<SearchResultItem[]> {
+  async search(query: string, opts?: { count?: number; signal?: AbortSignal; timeoutMs?: number }): Promise<SearchResultItem[]> {
     const q = query.trim();
     if (!q) return [];
     if (opts?.signal?.aborted) throw new ProviderError("GDELT search aborted", { timeout: true });
-    const timeout = AbortSignal.timeout(15000);
+    const timeout = AbortSignal.timeout(opts?.timeoutMs ?? 15000);
     const signal = opts?.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     try {
       const res = await this.fetchFn(

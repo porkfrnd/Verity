@@ -6,6 +6,7 @@ import {
   resetDuckDuckGoSpacing,
   unwrapDuckDuckGoHref,
 } from "../duckduckgo.js";
+import { ProviderError } from "../types.js";
 
 const PAGE = `
 <html><body>
@@ -90,6 +91,22 @@ describe("duckduckgo provider", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(p.search("great wall visible here", { signal: controller.signal })).rejects.toThrow(/abort/i);
+  });
+
+  it("classifies HTTP 202 as blocked (throttle page), not a parse case", async () => {
+    clearDuckDuckGoCache();
+    resetDuckDuckGoSpacing();
+    const blockPage = "<html><head><title>Attention Required</title></head><body>challenge, verify you are human</body></html>";
+    const p = new DuckDuckGoSearchProvider({
+      fetchFn: stubFetch(blockPage, 202),
+      minGapMs: 0,
+    });
+    const err = await p.search("water boils deeply").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect((err as ProviderError).category).toBe("blocked");
+    expect((err as ProviderError).httpStatus).toBe(202);
+    expect((err as ProviderError).detail).toMatchObject({ hasAnomaly: true });
+    expect(JSON.stringify((err as ProviderError).detail)).not.toContain("verify you are human");
   });
 
   it("empty queries never hit the network", async () => {
