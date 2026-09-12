@@ -196,5 +196,5 @@ Any Node 20.3+ host: set env vars, `npm ci && npm run build`, run `npm start` be
 
 ## Team
 
-- **Binayak Adhikari** — Team Leader / Programmer
-- **Amulya Pathak** — Presenter / Debugger
+- **Binayak Adhikari** — Team Leader
+- **Amulya Pathak** — Member
