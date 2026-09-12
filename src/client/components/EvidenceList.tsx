@@ -123,7 +123,12 @@ export function SourceDetail({
   );
 }
 
-export function EvidenceList({
+/**
+ * Layered source stack: backend order IS strength order (strongest first),
+ * so rank comes from position plus the backend's own quality/stance labels —
+ * never invented. Pure CSS layering, no scroll hijacking.
+ */
+export function SourceStack({
   sources,
   stances,
   onSelect,
@@ -134,10 +139,38 @@ export function EvidenceList({
 }) {
   if (sources.length === 0) return <p style={{ fontSize: 14 }}>No sources — insufficient evidence to judge.</p>;
   return (
-    <div className="source-stream">
-      {sources.map((s) => (
-        <SourceCard key={s.id} source={s} stance={stances?.[s.id]} onInspect={onSelect ? () => onSelect(s) : undefined} />
+    <div className="source-stack" role="list" aria-label={`${sources.length} sources, strongest first`}>
+      {sources.map((s, i) => (
+        <div key={s.id} role="listitem" className={`stack-card${i === 0 ? " is-top" : " is-lower"}`}>
+          <p className="stack-rank" aria-hidden="true">
+            <span className="rank-num">#{i + 1}</span>
+            {i === 0 ? (
+              <span className="rank-note">strongest evidence</span>
+            ) : (
+              <span className="rank-note">
+                {[stances?.[s.id], s.quality].filter(Boolean).join(" · ")}
+              </span>
+            )}
+          </p>
+          <SourceCard
+            source={s}
+            stance={stances?.[s.id]}
+            onInspect={onSelect ? () => onSelect(s) : undefined}
+          />
+        </div>
       ))}
     </div>
   );
+}
+
+export function EvidenceList({
+  sources,
+  stances,
+  onSelect,
+}: {
+  sources: Source[];
+  stances?: Record<string, string>;
+  onSelect?: (s: Source) => void;
+}) {
+  return <SourceStack sources={sources} stances={stances} onSelect={onSelect} />;
 }

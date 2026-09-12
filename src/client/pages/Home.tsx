@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { Investigation, SearchDepth, Source } from "../../shared/types.js";
 import { useInvestigation } from "../hooks/useInvestigation.js";
-import { fetchHistoryItem, recheckInvestigation } from "../services/api.js";
+import { useTheme } from "../hooks/useTheme.js";
+import { recheckInvestigation } from "../services/api.js";
 import { ClaimInput } from "../components/ClaimInput.js";
 import { InvestigationProgress } from "../components/InvestigationProgress.js";
 import { VerdictCard } from "../components/VerdictCard.js";
@@ -11,30 +12,31 @@ import { ContradictionPanel } from "../components/ContradictionPanel.js";
 import { CompareView } from "../components/CompareView.js";
 import { Settings } from "../components/Settings.js";
 import { History } from "../components/History.js";
+import { ResearchOverlay } from "../components/ResearchOverlay.js";
+import { addToHistory, clearHistory, loadHistory, removeFromHistory } from "../services/historyStore.js";
 
 const DEPTHS: Array<{ id: SearchDepth; label: string; hint: string }> = [
-  { id: "flash", label: "Flash", hint: "Fast · ~5–15s" },
-  { id: "deep", label: "Deep", hint: "Balanced · recommended" },
-  { id: "extended", label: "Extended", hint: "Thorough · slower" },
+  { id: "flash", label: "FLASH", hint: "~5–15s · shallow" },
+  { id: "deep", label: "DEEP", hint: "~30–60s · balanced" },
+  { id: "extended", label: "EXTENDED", hint: "~90–150s · thorough" },
 ];
 
 export function Home() {
   const { stage, depth, setDepth, providers, counts, investigation, error, run } = useInvestigation();
-  const [history, setHistory] = useState<Investigation[]>([]);
+  const { theme, toggle } = useTheme();
+  const [history, setHistory] = useState<Investigation[]>(() => loadHistory());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selected, setSelected] = useState<Source | null>(null);
   const [compare, setCompare] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [overlay, setOverlay] = useState<Investigation | null>(null);
   const [retrying, setRetrying] = useState(false);
   const pending = stage !== "idle" && stage !== "done" && stage !== "error";
 
-  const current: Investigation | null =
-    (selectedId ? history.find((h) => h.id === selectedId) : undefined) ?? investigation ?? history[history.length - 1] ?? null;
+  const current: Investigation | null = investigation ?? history[0] ?? null;
 
   async function handleSubmit(claim: string) {
     setSelected(null);
     setCompare(false);
-    setSelectedId(null);
     await run(claim);
   }
 
@@ -42,20 +44,18 @@ export function Home() {
     setRetrying(true);
     try {
       const fresh = await recheckInvestigation(invId);
-      setHistory((h) => [...h, fresh]);
-      setSelectedId(fresh.id);
+      setHistory((h) => addToHistory(h, fresh));
       setSelected(null);
     } catch {
-      // The error box below shows investigation errors; retry failures surface
-      // as a history no-op rather than a crash.
+      // Retry failures surface as a history no-op rather than a crash.
     } finally {
       setRetrying(false);
     }
   }
 
-  // Track history when a new investigation lands
+  // Track history when a new investigation lands (persisted to this browser only)
   if (investigation && !history.some((h) => h.id === investigation.id)) {
-    setHistory((h) => [...h, investigation]);
+    setHistory((h) => addToHistory(h, investigation));
   }
 
   return (
@@ -66,7 +66,16 @@ export function Home() {
             Verity <small>search first · analyze second</small>
           </div>
           <div className="header-actions">
-            <span className="api-tag">API</span>
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={toggle}
+              aria-pressed={theme === "dark"}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? "☾ dark" : "☀ light"}
+            </button>
             <button type="button" className="btn btn-small" onClick={() => setSettingsOpen(true)}>
               Settings
             </button>
@@ -76,7 +85,7 @@ export function Home() {
       <main className="main">
         <ClaimInput pending={pending} onSubmit={handleSubmit} />
         <div className="depth-selector" role="group" aria-label="Search depth">
-          <span className="depth-kicker">Search depth</span>
+          <span className="depth-kicker" aria-hidden="true">Depth</span>
           {DEPTHS.map((d) => (
             <button
               key={d.id}
@@ -85,12 +94,11 @@ export function Home() {
               aria-pressed={depth === d.id}
               disabled={pending}
               onClick={() => setDepth(d.id)}
-              title={d.hint}
             >
-              {d.label}
+              <strong>{d.label}</strong>
+              <small>{d.hint}</small>
             </button>
           ))}
-          <span className="depth-hint">{DEPTHS.find((d) => d.id === depth)?.hint}</span>
         </div>
         <div style={{ marginTop: 12 }}>
           <InvestigationProgress
@@ -219,15 +227,14 @@ export function Home() {
               <p className="section-label">Recent investigations</p>
               <History
                 items={history}
-                onSelect={async (id) => {
-                  setSelectedId(id);
-                  setSelected(null);
-                  try {
-                    const item = await fetchHistoryItem(id);
-                    setHistory((h) => (h.some((x) => x.id === item.id) ? h : [...h, item]));
-                  } catch {
-                    // session-local history already shows the item
-                  }
+                onSelect={(id) => setOverlay(history.find((h) => h.id === id) ?? null)}
+                onDelete={(id) => {
+                  if (overlay?.id === id) setOverlay(null);
+                  setHistory((h) => removeFromHistory(h, id));
+                }}
+                onClear={() => {
+                  setOverlay(null);
+                  setHistory(clearHistory());
                 }}
               />
             </div>
@@ -237,6 +244,7 @@ export function Home() {
           <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
         </div>
       </main>
+      {overlay && <ResearchOverlay investigation={overlay} onClose={() => setOverlay(null)} />}
     </div>
   );
 }

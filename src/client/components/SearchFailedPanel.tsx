@@ -7,7 +7,7 @@ export function SearchFailedPanel({
 }: {
   report: SearchReport;
   retrying: boolean;
-  onRetry: () => void;
+  onRetry?: () => void;
 }) {
   return (
     <article className="panel verdict-block" aria-label="Search failed">
@@ -41,9 +41,11 @@ export function SearchFailedPanel({
         <p className="stale-note">The search budget was exhausted before providers finished.</p>
       )}
       <div style={{ marginTop: 10 }}>
-        <button type="button" className="btn btn-primary" disabled={retrying} onClick={onRetry}>
-          {retrying ? "Retrying…" : "Retry search"}
-        </button>
+        {onRetry && (
+          <button type="button" className="btn btn-primary" disabled={retrying} onClick={onRetry}>
+            {retrying ? "Retrying…" : "Retry search"}
+          </button>
+        )}
       </div>
     </article>
   );
