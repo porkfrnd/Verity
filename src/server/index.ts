@@ -14,7 +14,7 @@ process.on("unhandledRejection", (reason) => {
   process.exit(1);
 });
 
-if (process.env.NODE_ENV !== "test") {
+if (process.env.SKIP_LISTEN !== "1") {
   app.listen(port, () => {
     safeLog(`Verity server listening on :${port}`);
   });

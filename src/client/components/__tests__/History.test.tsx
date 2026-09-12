@@ -23,7 +23,14 @@ describe("History", () => {
   it("4. clicking an entry selects it without any network call (no re-investigation)", async () => {
     const fetchSpy = vi.fn(async () => {
       throw new Error("network must not be touched");
-    });
+  it("renders legacy records without a depth field instead of crashing", () => {
+    const legacy = inv("old") as unknown as Record<string, unknown>;
+    delete legacy.depth;
+    render(<History items={[legacy as unknown as Investigation]} onSelect={() => {}} />);
+    // Falls back to DEEP rather than throwing on .toUpperCase().
+    expect(screen.getByText(/DEEP/)).toBeInTheDocument();
+  });
+});
     vi.stubGlobal("fetch", fetchSpy);
     const onSelect = vi.fn();
     render(<History items={[inv("a"), inv("b")]} onSelect={onSelect} />);

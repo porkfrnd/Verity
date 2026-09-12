@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Source } from "../../shared/types.js";
 
 function timeAgo(iso?: string): string | null {
@@ -126,7 +126,9 @@ export function SourceDetail({
 /**
  * Layered source stack: backend order IS strength order (strongest first),
  * so rank comes from position plus the backend's own quality/stance labels —
- * never invented. Pure CSS layering, no scroll hijacking.
+ * never invented. An IntersectionObserver tracks which card sits in the
+ * focus band so it can rise while others settle; no scroll handlers, no
+ * hijacking, keyboard/touch/wheel all behave natively.
  */
 export function SourceStack({
   sources,
@@ -137,11 +139,45 @@ export function SourceStack({
   stances?: Record<string, string>;
   onSelect?: (s: Source) => void;
 }) {
+  const [active, setActive] = useState(0);
+  const cards = useRef(new Map<number, HTMLDivElement>());
+
+  useEffect(() => {
+    setActive(0);
+    if (typeof IntersectionObserver === "undefined") return;
+    const seen = new Map<number, boolean>();
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) {
+          const i = Number((en.target as HTMLElement).dataset.index);
+          if (Number.isInteger(i)) seen.set(i, en.isIntersecting);
+        }
+        let top: number | null = null;
+        for (const [i, visible] of seen) {
+          if (visible && (top === null || i < top)) top = i;
+        }
+        if (top !== null) setActive(top);
+      },
+      { rootMargin: "-25% 0px -60% 0px", threshold: 0 }
+    );
+    cards.current.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [sources]);
+
   if (sources.length === 0) return <p style={{ fontSize: 14 }}>No sources — insufficient evidence to judge.</p>;
   return (
     <div className="source-stack" role="list" aria-label={`${sources.length} sources, strongest first`}>
       {sources.map((s, i) => (
-        <div key={s.id} role="listitem" className={`stack-card${i === 0 ? " is-top" : " is-lower"}`}>
+        <div
+          key={s.id}
+          role="listitem"
+          data-index={i}
+          ref={(el) => {
+            if (el) cards.current.set(i, el);
+            else cards.current.delete(i);
+          }}
+          className={`stack-card${i === 0 ? " is-top" : " is-lower"}${i === active ? " is-active" : i < active ? " is-past" : ""}`}
+        >
           <p className="stack-rank" aria-hidden="true">
             <span className="rank-num">#{i + 1}</span>
             {i === 0 ? (

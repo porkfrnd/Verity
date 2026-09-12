@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Investigation, SearchDepth, Source } from "../../shared/types.js";
 import { useInvestigation } from "../hooks/useInvestigation.js";
 import { useTheme } from "../hooks/useTheme.js";
@@ -13,6 +13,8 @@ import { CompareView } from "../components/CompareView.js";
 import { Settings } from "../components/Settings.js";
 import { History } from "../components/History.js";
 import { ResearchOverlay } from "../components/ResearchOverlay.js";
+import { SidebarNav, type NavSection } from "../components/Sidebar.js";
+import { UtilityPanel } from "../components/UtilityPanel.js";
 import { addToHistory, clearHistory, loadHistory, removeFromHistory } from "../services/historyStore.js";
 
 const DEPTHS: Array<{ id: SearchDepth; label: string; hint: string }> = [
@@ -20,6 +22,12 @@ const DEPTHS: Array<{ id: SearchDepth; label: string; hint: string }> = [
   { id: "deep", label: "DEEP", hint: "~30–60s · balanced" },
   { id: "extended", label: "EXTENDED", hint: "~90–150s · thorough" },
 ];
+
+const SECTION_IDS: Record<NavSection, string> = {
+  investigate: "sec-investigate",
+  evidence: "sec-evidence",
+  history: "sec-history",
+};
 
 export function Home() {
   const { stage, depth, setDepth, providers, counts, investigation, error, run } = useInvestigation();
@@ -30,6 +38,9 @@ export function Home() {
   const [compare, setCompare] = useState(false);
   const [overlay, setOverlay] = useState<Investigation | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [section, setSection] = useState<NavSection>("investigate");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
   const pending = stage !== "idle" && stage !== "done" && stage !== "error";
 
   const current: Investigation | null = investigation ?? history[0] ?? null;
@@ -58,63 +69,134 @@ export function Home() {
     setHistory((h) => addToHistory(h, investigation));
   }
 
+  // Scroll-spy: highlight the nav section currently in view.
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) {
+          if (en.isIntersecting) {
+            const id = (en.target as HTMLElement).id;
+            if (id === SECTION_IDS.investigate) setSection("investigate");
+            else if (id === SECTION_IDS.evidence) setSection("evidence");
+            else if (id === SECTION_IDS.history) setSection("history");
+          }
+        }
+      },
+      { rootMargin: "-20% 0px -65% 0px", threshold: 0 }
+    );
+    for (const id of Object.values(SECTION_IDS)) {
+      const el = document.getElementById(id);
+      if (el) obs.observe(el);
+    }
+    return () => obs.disconnect();
+  }, [current?.id]);
+
+  // Mobile drawer: Escape closes, background scroll locks, focus starts inside.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    drawerCloseRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [drawerOpen ]);
+
+  function navigate(to: NavSection) {
+    setSection(to);
+    setDrawerOpen(false);
+    document.getElementById(SECTION_IDS[to])?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const nav = (
+    <SidebarNav
+      active={section}
+      onNavigate={navigate}
+      onOpenSettings={() => {
+        setDrawerOpen(false);
+        setSettingsOpen(true);
+      }}
+      theme={theme}
+      onToggleTheme={toggle}
+      pending={pending}
+    />
+  );
+
   return (
-    <div>
-      <header className="app-header">
-        <div className="app-header-inner">
-          <div className="brand">
-            Verity <small>search first · analyze second</small>
-          </div>
-          <div className="header-actions">
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={toggle}
-              aria-pressed={theme === "dark"}
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {theme === "dark" ? "☾ dark" : "☀ light"}
+    <div className="shell">
+      <a className="skip-link" href="#sec-investigate">
+        Skip to investigation
+      </a>
+      <aside className="sidebar" aria-label="Application">
+        {nav}
+      </aside>
+      <div className="mobilebar">
+        <button
+          type="button"
+          className="btn btn-small"
+          aria-expanded={drawerOpen}
+          aria-controls="mobile-nav"
+          onClick={() => setDrawerOpen((v) => !v)}
+        >
+          ☰ Menu
+        </button>
+        <span className="brand">
+          Verity <small>research workspace</small>
+        </span>
+      </div>
+      {drawerOpen && (
+        <div className="drawer-backdrop" onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setDrawerOpen(false);
+        }}>
+          <div id="mobile-nav" className="drawer" role="dialog" aria-modal="true" aria-label="Application navigation">
+            <button ref={drawerCloseRef} type="button" className="overlay-close" onClick={() => setDrawerOpen(false)}>
+              Close ✕
             </button>
-            <button type="button" className="btn btn-small" onClick={() => setSettingsOpen(true)}>
-              Settings
-            </button>
+            {nav}
           </div>
         </div>
-      </header>
+      )}
       <main className="main">
-        <ClaimInput pending={pending} onSubmit={handleSubmit} />
-        <div className="depth-selector" role="group" aria-label="Search depth">
-          <span className="depth-kicker" aria-hidden="true">Depth</span>
-          {DEPTHS.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              className={`depth-btn${depth === d.id ? " is-active" : ""}`}
-              aria-pressed={depth === d.id}
-              disabled={pending}
-              onClick={() => setDepth(d.id)}
-            >
-              <strong>{d.label}</strong>
-              <small>{d.hint}</small>
-            </button>
-          ))}
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <InvestigationProgress
-            stage={stage}
-            providers={providers}
-            totalFound={counts.totalFound}
-            uniqueCount={counts.uniqueCount}
-            budgetExhausted={counts.budgetExhausted}
-            earlyStopped={counts.earlyStopped}
-          />
-        </div>
-        {error && (
-          <div className="error-box" role="alert" style={{ marginTop: 12 }}>
-            <strong>Investigation failed:</strong> {error}
+        <section id="sec-investigate" aria-label="Investigation entry">
+          <ClaimInput pending={pending} onSubmit={handleSubmit} />
+          <div className="depth-selector" role="group" aria-label="Search depth">
+            <span className="depth-kicker" aria-hidden="true">Depth</span>
+            {DEPTHS.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                className={`depth-btn${depth === d.id ? " is-active" : ""}`}
+                aria-pressed={depth === d.id}
+                disabled={pending}
+                onClick={() => setDepth(d.id)}
+              >
+                <strong>{d.label}</strong>
+                <small>{d.hint}</small>
+              </button>
+            ))}
           </div>
-        )}
+          <div style={{ marginTop: 12 }}>
+            <InvestigationProgress
+              stage={stage}
+              providers={providers}
+              totalFound={counts.totalFound}
+              uniqueCount={counts.uniqueCount}
+              budgetExhausted={counts.budgetExhausted}
+              earlyStopped={counts.earlyStopped}
+            />
+          </div>
+          {error && (
+            <div className="error-box" role="alert" style={{ marginTop: 12 }}>
+              <strong>Investigation failed:</strong> {error}
+            </div>
+          )}
+        </section>
         {current && stage !== "extracting" && stage !== "searching" && (
           <div style={{ marginTop: 14 }}>
             <section className="panel" aria-label="Claim">
@@ -140,7 +222,7 @@ export function Home() {
                 </div>
               )}
               <p className="depth-record">
-                Search depth: {current.depth.toUpperCase()}
+                Search depth: {(current.depth ?? "deep").toUpperCase()}
                 {current.cached ? " · cached result — re-check runs a fresh search" : ""}
               </p>
             </section>
@@ -158,63 +240,61 @@ export function Home() {
                       {r.claim.id} · {r.claim.text}
                     </p>
                   )}
-                  <div className="workspace" style={{ marginTop: 0 }}>
-                    <div>
-                      <p className="section-label">
-                        Evidence · {r.searchReport.uniqueCount} unique ({r.searchReport.totalFound} found)
-                      </p>
-                      {factChecks.length > 0 && (
-                        <section aria-label="Prior fact-checks" style={{ marginBottom: 12 }}>
-                          <p className="section-label">Prior fact-checks found</p>
-                          <EvidenceList sources={factChecks} stances={stances} onSelect={setSelected} />
-                        </section>
-                      )}
-                      <section aria-label="Search evidence">
-                        {factChecks.length > 0 && <p className="section-label">Search evidence</p>}
-                        <EvidenceList sources={webSources} stances={stances} onSelect={setSelected} />
+                  <section aria-label="Verdict and analysis">
+                    <p className="section-label">Analysis</p>
+                    {r.searchFailed ? (
+                      <SearchFailedPanel report={r.searchReport} retrying={retrying} onRetry={() => handleRetry(current.id)} />
+                    ) : (
+                      <VerdictCard result={r} />
+                    )}
+                    {!r.searchFailed && (
+                      <div className="panel" style={{ marginTop: 12 }}>
+                        <p className="section-label">Contradictions</p>
+                        <ContradictionPanel items={r.contradictions} />
+                      </div>
+                    )}
+                  </section>
+                  <section id="sec-evidence" aria-label="Evidence" style={{ marginTop: 14 }}>
+                    <p className="section-label">
+                      Evidence · {r.searchReport.uniqueCount} unique ({r.searchReport.totalFound} found)
+                    </p>
+                    {factChecks.length > 0 && (
+                      <section aria-label="Prior fact-checks" style={{ marginBottom: 12 }}>
+                        <p className="section-label">Prior fact-checks found</p>
+                        <EvidenceList sources={factChecks} stances={stances} onSelect={setSelected} />
                       </section>
-                      {r.sources.length >= 2 && (
-                        <button type="button" className="btn btn-small" style={{ marginTop: 8 }} onClick={() => setCompare((v) => !v)}>
-                          {compare ? "Hide compare view" : "Compare evidence"}
-                        </button>
-                      )}
-                      {compare && (
-                        <div style={{ marginTop: 8 }}>
-                          <CompareView sources={r.sources} />
-                        </div>
-                      )}
-                      {showDiagnostics && (
-                        <details className="diagnostics">
-                          <summary>Search diagnostics ({r.searchReport.providers.length} providers)</summary>
-                          <ul>
-                            {r.searchReport.providers.map((p) => (
-                              <li key={p.provider}>
-                                <strong>{p.provider}</strong> · {p.status} · {(p.latencyMs / 1000).toFixed(1)}s ·{" "}
-                                {p.sources} sources · {p.retries} retr{p.retries === 1 ? "y" : "ies"}
-                                {typeof p.httpStatus === "number" ? ` · HTTP ${p.httpStatus}` : ""}
-                                {p.error ? ` · ${p.error}` : ""}
-                              </li>
-                            ))}
-                          </ul>
-                          {r.searchReport.budgetExhausted && <p>Search budget exhausted — analyzed what was collected.</p>}
-                        </details>
-                      )}
-                    </div>
-                    <div>
-                      <p className="section-label">Analysis</p>
-                      {r.searchFailed ? (
-                        <SearchFailedPanel report={r.searchReport} retrying={retrying} onRetry={() => handleRetry(current.id)} />
-                      ) : (
-                        <VerdictCard result={r} />
-                      )}
-                      {!r.searchFailed && (
-                        <div className="panel" style={{ marginTop: 12 }}>
-                          <p className="section-label">Contradictions</p>
-                          <ContradictionPanel items={r.contradictions} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    )}
+                    <section aria-label="Search evidence">
+                      {factChecks.length > 0 && <p className="section-label">Search evidence</p>}
+                      <EvidenceList sources={webSources} stances={stances} onSelect={setSelected} />
+                    </section>
+                    {r.sources.length >= 2 && (
+                      <button type="button" className="btn btn-small" style={{ marginTop: 8 }} onClick={() => setCompare((v) => !v)}>
+                        {compare ? "Hide compare view" : "Compare evidence"}
+                      </button>
+                    )}
+                    {compare && (
+                      <div style={{ marginTop: 8 }}>
+                        <CompareView sources={r.sources} />
+                      </div>
+                    )}
+                    {showDiagnostics && (
+                      <details className="diagnostics">
+                        <summary>Search diagnostics ({r.searchReport.providers.length} providers)</summary>
+                        <ul>
+                          {r.searchReport.providers.map((p) => (
+                            <li key={p.provider}>
+                              <strong>{p.provider}</strong> · {p.status} · {(p.latencyMs / 1000).toFixed(1)}s ·{" "}
+                              {p.sources} sources · {p.retries} retr{p.retries === 1 ? "y" : "ies"}
+                              {typeof p.httpStatus === "number" ? ` · HTTP ${p.httpStatus}` : ""}
+                              {p.error ? ` · ${p.error}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                        {r.searchReport.budgetExhausted && <p>Search budget exhausted — analyzed what was collected.</p>}
+                      </details>
+                    )}
+                  </section>
                   {selected && (
                     <div style={{ marginTop: 12 }}>
                       <SourceDetail source={selected} stance={selectedStance} onClose={() => setSelected(null)} />
@@ -223,7 +303,7 @@ export function Home() {
                 </div>
               );
             })}
-            <div className="panel" style={{ marginTop: 14 }}>
+            <section id="sec-history" aria-label="History" className="panel" style={{ marginTop: 14 }}>
               <p className="section-label">Recent investigations</p>
               <History
                 items={history}
@@ -237,13 +317,14 @@ export function Home() {
                   setHistory(clearHistory());
                 }}
               />
-            </div>
+            </section>
           </div>
         )}
         <div style={{ marginTop: 12 }}>
           <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
         </div>
       </main>
+      <UtilityPanel stage={stage} investigation={current} />
       {overlay && <ResearchOverlay investigation={overlay} onClose={() => setOverlay(null)} />}
     </div>
   );

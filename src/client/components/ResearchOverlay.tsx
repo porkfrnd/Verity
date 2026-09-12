@@ -51,7 +51,7 @@ export function ResearchOverlay({ investigation, onClose }: { investigation: Inv
             <p className="section-label">Research record</p>
             <p className="claim-original">&ldquo;{investigation.originalClaim}&rdquo;</p>
             <p className="overlay-meta">
-              <span>depth: {investigation.depth.toUpperCase()}</span>
+              <span>depth: {(investigation.depth ?? "deep").toUpperCase()}</span>
               <span>{formatTime(investigation.createdAt)}</span>
               {investigation.cached && <span>cached</span>}
             </p>

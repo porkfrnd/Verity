@@ -50,7 +50,9 @@ export function useInvestigation() {
     setStage(STAGE_ORDER[0]);
     timer.current = window.setInterval(() => {
       if (live) return;
-      i = Math.min(i + 1, STAGE_ORDER.length - 1);
+      // Never display "verdict" without a verdict: the fallback ticker stops
+      // at contradictions; only real claim/done events advance past it.
+      i = Math.min(i + 1, STAGE_ORDER.length - 2);
       setStage(STAGE_ORDER[i]);
     }, 1200);
     const markLive = () => {

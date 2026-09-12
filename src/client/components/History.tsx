@@ -25,7 +25,7 @@ export function History({
               <button type="button" className="history-open" onClick={() => onSelect(inv.id)}>
                 <span className="hist-claim">{inv.originalClaim.slice(0, 80)}</span>
                 <span className="hist-meta">
-                  {first ? VERDICT_LABELS[first.analysis.verdict] : "—"} · {inv.depth.toUpperCase()} ·{" "}
+                  {first ? VERDICT_LABELS[first.analysis.verdict] : "—"} · {(inv.depth ?? "deep").toUpperCase()} ·{" "}
                   {new Date(inv.createdAt).toLocaleDateString()}
                   {inv.cached ? " · cached" : ""}
                 </span>
