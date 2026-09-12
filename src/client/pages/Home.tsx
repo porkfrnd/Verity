@@ -106,7 +106,7 @@ export function Home() {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [drawerOpen ]);
+  }, [drawerOpen]);
 
   function navigate(to: NavSection) {
     setSection(to);
@@ -151,9 +151,12 @@ export function Home() {
         </span>
       </div>
       {drawerOpen && (
-        <div className="drawer-backdrop" onMouseDown={(e) => {
-          if (e.target === e.currentTarget) setDrawerOpen(false);
-        }}>
+        <div
+          className="drawer-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDrawerOpen(false);
+          }}
+        >
           <div id="mobile-nav" className="drawer" role="dialog" aria-modal="true" aria-label="Application navigation">
             <button ref={drawerCloseRef} type="button" className="overlay-close" onClick={() => setDrawerOpen(false)}>
               Close ✕
@@ -166,7 +169,9 @@ export function Home() {
         <section id="sec-investigate" aria-label="Investigation entry">
           <ClaimInput pending={pending} onSubmit={handleSubmit} />
           <div className="depth-selector" role="group" aria-label="Search depth">
-            <span className="depth-kicker" aria-hidden="true">Depth</span>
+            <span className="depth-kicker" aria-hidden="true">
+              Depth
+            </span>
             {DEPTHS.map((d) => (
               <button
                 key={d.id}
@@ -198,7 +203,7 @@ export function Home() {
           )}
         </section>
         {current && stage !== "extracting" && stage !== "searching" && (
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 16 }}>
             <section className="panel" aria-label="Claim">
               <p className="section-label">Original claim</p>
               <p className="claim-original">&ldquo;{current.originalClaim}&rdquo;</p>
@@ -234,9 +239,16 @@ export function Home() {
               const selectedStance = selected ? stances[selected.id] : undefined;
               const showDiagnostics = r.searchReport.providers.length > 0;
               return (
-                <div key={r.claim.id} style={{ marginTop: 14 }}>
+                <div key={r.claim.id} style={{ marginTop: 16 }}>
                   {current.results.length > 1 && (
-                    <p style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)", margin: "0 0 6px" }}>
+                    <p
+                      style={{
+                        fontFamily: "var(--mono)",
+                        fontSize: 12,
+                        color: "var(--ink-4)",
+                        margin: "0 0 6px",
+                      }}
+                    >
                       {r.claim.id} · {r.claim.text}
                     </p>
                   )}
@@ -254,7 +266,7 @@ export function Home() {
                       </div>
                     )}
                   </section>
-                  <section id="sec-evidence" aria-label="Evidence" style={{ marginTop: 14 }}>
+                  <section id="sec-evidence" aria-label="Evidence" style={{ marginTop: 16 }}>
                     <p className="section-label">
                       Evidence · {r.searchReport.uniqueCount} unique ({r.searchReport.totalFound} found)
                     </p>
@@ -269,7 +281,12 @@ export function Home() {
                       <EvidenceList sources={webSources} stances={stances} onSelect={setSelected} />
                     </section>
                     {r.sources.length >= 2 && (
-                      <button type="button" className="btn btn-small" style={{ marginTop: 8 }} onClick={() => setCompare((v) => !v)}>
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        style={{ marginTop: 8 }}
+                        onClick={() => setCompare((v) => !v)}
+                      >
                         {compare ? "Hide compare view" : "Compare evidence"}
                       </button>
                     )}
@@ -291,7 +308,9 @@ export function Home() {
                             </li>
                           ))}
                         </ul>
-                        {r.searchReport.budgetExhausted && <p>Search budget exhausted — analyzed what was collected.</p>}
+                        {r.searchReport.budgetExhausted && (
+                          <p>Search budget exhausted — analyzed what was collected.</p>
+                        )}
                       </details>
                     )}
                   </section>
@@ -303,7 +322,7 @@ export function Home() {
                 </div>
               );
             })}
-            <section id="sec-history" aria-label="History" className="panel" style={{ marginTop: 14 }}>
+            <section id="sec-history" aria-label="History" className="panel" style={{ marginTop: 16 }}>
               <p className="section-label">Recent investigations</p>
               <History
                 items={history}
@@ -320,12 +339,10 @@ export function Home() {
             </section>
           </div>
         )}
-        <div style={{ marginTop: 12 }}>
-          <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-        </div>
       </main>
       <UtilityPanel stage={stage} investigation={current} />
       {overlay && <ResearchOverlay investigation={overlay} onClose={() => setOverlay(null)} />}
+      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

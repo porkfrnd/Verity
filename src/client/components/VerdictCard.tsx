@@ -14,12 +14,17 @@ const BREAKDOWN_LABELS: Record<string, string> = {
 
 function ConfidenceMeter({ score }: { score: ConfidenceScore }) {
   return (
-    <div>
+    <div style={{ margin: "6px 0 8px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span style={{ fontSize: 30, fontWeight: 750, letterSpacing: "-0.02em" }} aria-label={`${score.percentage}% confidence in the verdict`}>
+        <span
+          style={{ fontSize: 32, fontWeight: 780, letterSpacing: "-0.025em", lineHeight: 1 }}
+          aria-label={`${score.percentage}% confidence in the verdict`}
+        >
           {score.percentage}%
         </span>
-        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--muted)" }}>confidence in this verdict</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--ink-4)" }}>
+          confidence in this verdict
+        </span>
       </div>
       <div className="conf-bar" role="img" aria-label={`Confidence meter: ${score.percentage} out of 100`}>
         <i style={{ width: `${score.percentage}%` }} />
@@ -34,7 +39,10 @@ function ConfidenceMeter({ score }: { score: ConfidenceScore }) {
             </li>
           ))}
         </ul>
-        <p>Computed by Verity's scoring formula from the evidence above — never chosen by the AI. Same evidence always yields the same number.</p>
+        <p>
+          Computed by Verity&apos;s scoring formula from the evidence above — never chosen by the AI. Same evidence
+          always yields the same number.
+        </p>
       </details>
     </div>
   );
@@ -60,7 +68,9 @@ export function VerdictCard({ result }: { result: ClaimVerdict }) {
       <p className="verdict-summary">{analysis.summary}</p>
       {result.staleNote && <p className="stale-note">{result.staleNote}</p>}
       {analysis.evidence.length === 0 ? (
-        <p style={{ fontSize: 14 }}>No direct evidence was available — hence {VERDICT_LABELS[analysis.verdict]}.</p>
+        <p style={{ fontSize: 14, color: "var(--ink-2)" }}>
+          No direct evidence was available — hence {VERDICT_LABELS[analysis.verdict]}.
+        </p>
       ) : (
         <div>
           {contradicts.length > 0 && (
@@ -111,7 +121,9 @@ export function VerdictCard({ result }: { result: ClaimVerdict }) {
         </div>
       )}
       {analysis.missing_information.length > 0 && (
-        <p style={{ fontSize: 13, color: "var(--ink-soft)" }}>Missing: {analysis.missing_information.join("; ")}</p>
+        <p style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 8 }}>
+          Missing: {analysis.missing_information.join("; ")}
+        </p>
       )}
     </article>
   );

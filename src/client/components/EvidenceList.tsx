@@ -9,9 +9,9 @@ function timeAgo(iso?: string): string | null {
   if (days < 0) return null;
   if (days === 0) return "today";
   if (days === 1) return "yesterday";
-  if (days < 30) return `${days} days ago`;
-  if (days < 365) return `${Math.floor(days / 30)} mo ago`;
-  return `${Math.floor(days / 365)} yr ago`;
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}yr ago`;
 }
 
 export function SourceCard({ source, stance, onInspect }: { source: Source; stance?: string; onInspect?: () => void }) {
@@ -36,10 +36,17 @@ export function SourceCard({ source, stance, onInspect }: { source: Source; stan
       <div className="source-meta">
         <span className="type-tag">{source.sourceType}</span>
         {ago && <span>{ago}</span>}
-        {source.accessStatus && source.accessStatus !== "ok" && <span>via {source.accessStatus.replace(/_/g, " ")}</span>}
+        {source.accessStatus && source.accessStatus !== "ok" && (
+          <span>via {source.accessStatus.replace(/_/g, " ")}</span>
+        )}
       </div>
       <div className="source-actions">
-        <button type="button" className="link-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <button
+          type="button"
+          className="link-btn"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
           {open ? "Hide details" : "Details"}
         </button>
         <a className="link-btn" href={source.url} target="_blank" rel="noreferrer">
@@ -52,15 +59,14 @@ export function SourceCard({ source, stance, onInspect }: { source: Source; stan
         )}
       </div>
       {open && source.content && (
-        <div style={{ marginTop: 8, fontSize: 13 }}>
-          <p style={{ whiteSpace: "pre-wrap" }}>{source.content.slice(0, 1200)}</p>
+        <div style={{ marginTop: 8, fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55 }}>
+          <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{source.content.slice(0, 1200)}</p>
         </div>
       )}
     </article>
   );
 }
 
-// Backwards-compatible alias (older tests/e2e look for a "Details" toggle).
 export function SourceRowWithDetails(props: { source: Source; stance?: string }) {
   return <SourceCard {...props} />;
 }
@@ -78,8 +84,8 @@ export function SourceDetail({
   return (
     <div className="panel" role="dialog" aria-label={`Source detail: ${source.title}`}>
       <p className="section-label">Source</p>
-      <h3 style={{ fontSize: 16, margin: "0 0 2px" }}>{source.title}</h3>
-      <p style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)", margin: "0 0 4px" }}>
+      <h3 style={{ fontSize: 16, margin: "0 0 2px", fontWeight: 650 }}>{source.title}</h3>
+      <p style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--ink-4)", margin: "0 0 4px" }}>
         {source.domain}
       </p>
       <dl className="detail-grid">
@@ -99,7 +105,9 @@ export function SourceDetail({
       </dl>
       <div className="detail-section">
         <h4>Relevant evidence</h4>
-        <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{source.content ?? source.snippet ?? "No content extracted."}</p>
+        <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+          {source.content ?? source.snippet ?? "No content extracted."}
+        </p>
       </div>
       <div className="detail-section">
         <h4>Relation to claim</h4>
@@ -109,9 +117,11 @@ export function SourceDetail({
       </div>
       <div className="detail-section">
         <h4>Location</h4>
-        <p style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 12, overflowWrap: "anywhere" }}>{source.url}</p>
+        <p style={{ margin: 0, fontFamily: "var(--mono)", fontSize: 12, overflowWrap: "anywhere", wordBreak: "break-all" }}>
+          {source.url}
+        </p>
       </div>
-      <div style={{ marginTop: 10, display: "flex", gap: 12 }}>
+      <div style={{ marginTop: 10, display: "flex", gap: 14 }}>
         <a className="link-btn" href={source.url} target="_blank" rel="noreferrer">
           Open source <span aria-hidden="true">↗</span>
         </a>
@@ -164,7 +174,8 @@ export function SourceStack({
     return () => obs.disconnect();
   }, [sources]);
 
-  if (sources.length === 0) return <p style={{ fontSize: 14 }}>No sources — insufficient evidence to judge.</p>;
+  if (sources.length === 0)
+    return <p style={{ fontSize: 14, color: "var(--ink-3)" }}>No sources — insufficient evidence to judge.</p>;
   return (
     <div className="source-stack" role="list" aria-label={`${sources.length} sources, strongest first`}>
       {sources.map((s, i) => (

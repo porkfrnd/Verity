@@ -14,7 +14,8 @@ export function History({
   onClear?: () => void;
 }) {
   const [confirmingClear, setConfirmingClear] = useState(false);
-  if (items.length === 0) return <p style={{ fontSize: 14 }}>No investigations yet this session.</p>;
+  if (items.length === 0)
+    return <p style={{ fontSize: 14, color: "var(--ink-3)" }}>No investigations yet this session.</p>;
   return (
     <div>
       <ul className="history-list" aria-label="Recent investigations">
@@ -25,7 +26,8 @@ export function History({
               <button type="button" className="history-open" onClick={() => onSelect(inv.id)}>
                 <span className="hist-claim">{inv.originalClaim.slice(0, 80)}</span>
                 <span className="hist-meta">
-                  {first ? VERDICT_LABELS[first.analysis.verdict] : "—"} · {(inv.depth ?? "deep").toUpperCase()} ·{" "}
+                  {first ? VERDICT_LABELS[first.analysis.verdict] : "—"} ·{" "}
+                  {(inv.depth ?? "deep").toUpperCase()} ·{" "}
                   {new Date(inv.createdAt).toLocaleDateString()}
                   {inv.cached ? " · cached" : ""}
                 </span>
@@ -48,7 +50,7 @@ export function History({
         <div style={{ marginTop: 8 }}>
           {confirmingClear ? (
             <span style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 13 }}>
-              <span>Delete all {items.length} records?</span>
+              <span style={{ color: "var(--ink-3)" }}>Delete all {items.length} records?</span>
               <button
                 type="button"
                 className="btn btn-small"

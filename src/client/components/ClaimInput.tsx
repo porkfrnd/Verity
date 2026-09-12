@@ -22,7 +22,9 @@ export function ClaimInput({
 
   return (
     <section aria-label="Verify a claim">
-      <h1 style={{ fontSize: 17, margin: "0 0 8px", letterSpacing: "-0.01em" }}>Verify a claim</h1>
+      <h1 style={{ fontSize: 18, margin: "0 0 10px", letterSpacing: "-0.015em", fontWeight: 700 }}>
+        Verify a claim
+      </h1>
       <div className="search-block">
         <form
           onSubmit={(e) => {
@@ -37,10 +39,11 @@ export function ClaimInput({
             </label>
             <textarea
               id="claim-input"
-              placeholder="Search or paste a claim…"
+              placeholder="Paste a claim or enter a research query…"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               disabled={pending}
+              rows={2}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -55,13 +58,13 @@ export function ClaimInput({
           </div>
         </form>
         <div className="search-hint" aria-hidden="true">
-          <span>searches the web →</span>
-          <span>evaluates sources →</span>
+          <span>searches the web</span>
+          <span>evaluates sources</span>
           <span>checks contradictions</span>
         </div>
       </div>
       {touched && empty && (
-        <p role="alert" style={{ color: "#9c2b2b", fontSize: 13, fontFamily: "var(--mono)" }}>
+        <p role="alert" style={{ color: "var(--false)", fontSize: 13, fontFamily: "var(--mono)", margin: "6px 0 0" }}>
           Enter a claim of at least 3 characters.
         </p>
       )}

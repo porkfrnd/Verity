@@ -45,7 +45,12 @@ export function ResearchOverlay({ investigation, onClose }: { investigation: Inv
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="overlay-frame" role="dialog" aria-modal="true" aria-label={`Research record: ${investigation.originalClaim.slice(0, 80)}`}>
+      <div
+        className="overlay-frame"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Research record: ${investigation.originalClaim.slice(0, 80)}`}
+      >
         <div className="overlay-head">
           <div style={{ minWidth: 0 }}>
             <p className="section-label">Research record</p>
@@ -67,7 +72,14 @@ export function ResearchOverlay({ investigation, onClose }: { investigation: Inv
             return (
               <div key={r.claim.id} style={{ marginBottom: 14 }}>
                 {investigation.results.length > 1 && (
-                  <p style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--muted)", margin: "0 0 6px" }}>
+                  <p
+                    style={{
+                      fontFamily: "var(--mono)",
+                      fontSize: 12,
+                      color: "var(--ink-4)",
+                      margin: "0 0 6px",
+                    }}
+                  >
                     {r.claim.id} · {r.claim.text}
                   </p>
                 )}
@@ -77,7 +89,9 @@ export function ResearchOverlay({ investigation, onClose }: { investigation: Inv
                   <VerdictCard result={r} />
                 )}
                 {r.analysis.reasoning_summary && (
-                  <p style={{ fontSize: 13, color: "var(--ink-soft)", margin: "8px 0 0" }}>{r.analysis.reasoning_summary}</p>
+                  <p style={{ fontSize: 13, color: "var(--ink-3)", margin: "8px 0 0", lineHeight: 1.5 }}>
+                    {r.analysis.reasoning_summary}
+                  </p>
                 )}
                 {!r.searchFailed && r.contradictions.length > 0 && (
                   <div className="panel" style={{ marginTop: 10 }}>

@@ -1,18 +1,21 @@
 import type { Source } from "../../shared/types.js";
 
 export function CompareView({ sources }: { sources: Source[] }) {
-  if (sources.length < 2) return <p style={{ fontSize: 14 }}>Need at least two sources to compare.</p>;
+  if (sources.length < 2)
+    return <p style={{ fontSize: 14, color: "var(--ink-3)" }}>Need at least two sources to compare.</p>;
   const [a, b] = sources;
   return (
     <div className="compare-grid" aria-label="Compare evidence">
       {[a, b].map((s) => (
         <div key={s.id} className="source-card">
-          <h3>{s.title}</h3>
+          <h3 style={{ fontSize: 14, margin: "0 0 4px", fontWeight: 650 }}>{s.title}</h3>
           <div className="source-meta">
             <span>{s.domain}</span>
-            <span>{s.sourceType}</span>
+            <span className="type-tag">{s.sourceType}</span>
           </div>
-          <p style={{ fontSize: 13 }}>{(s.content ?? s.snippet ?? "").slice(0, 600)}</p>
+          <p style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.5, margin: "8px 0" }}>
+            {(s.content ?? s.snippet ?? "").slice(0, 600)}
+          </p>
           <a href={s.url} target="_blank" rel="noreferrer" style={{ fontSize: 13 }}>
             {s.url}
           </a>

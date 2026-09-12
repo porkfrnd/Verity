@@ -41,7 +41,11 @@ export function InvestigationProgress({
           const done = stage === "done" || i < activeIdx;
           const active = i === activeIdx && stage !== "done" && stage !== "error";
           return (
-            <li key={s.id} aria-current={active ? "step" : undefined} className={done ? "is-done" : active ? "is-active" : ""}>
+            <li
+              key={s.id}
+              aria-current={active ? "step" : undefined}
+              className={done ? "is-done" : active ? "is-active" : ""}
+            >
               <span className="step-mark" aria-hidden="true">
                 {done ? "✓" : active ? "●" : "○"}
               </span>
