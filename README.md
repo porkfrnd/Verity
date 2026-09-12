@@ -1,6 +1,26 @@
 # Verity
 
-Evidence-based claim verification tool. **Search first, analyze second.** The LLM acts as an evidence analyst reasoning over supplied sources — never as a standalone oracle answering from its own training data.
+**Search first, analyze second.**
+
+Evidence-based claim verification — a full-stack web app that verifies factual claims by grounding every verdict in evidence retrieved live from the web, then computes a deterministic, auditable confidence score.
+
+---
+
+## The Problem
+
+Misinformation and unverified claims spread faster than they can be checked. The tools people currently reach for either ask a large language model to answer from its own training data — producing confident-sounding but sometimes hallucinated verdicts — or require a person to manually search, read, and cross-check multiple sources by hand, which is slow and inconsistent. There is no accessible tool that automates the full evidence-gathering process end-to-end while staying honest about what it does and doesn't know.
+
+## The Solution
+
+Verity is a full-stack web app that verifies factual claims by grounding every verdict in evidence retrieved live from the web — never from LLM training data. It returns "UNVERIFIED" rather than fabricating an answer when no evidence exists.
+
+**Core differentiators:**
+
+- **LLM as Analyst, Not Oracle** — the LLM only reasons over the actual retrieved source text handed to it, never its own training data
+- **Deterministic Confidence** — a pure function computes the score; same evidence always produces the same number, fully auditable and reproducible
+- **Honest About Failure** — no evidence found → "UNVERIFIED"; provider failures shown with real diagnostics, never hidden
+
+---
 
 ## Quickstart
 
@@ -17,36 +37,99 @@ Open http://localhost:5173, enter a claim, press **Investigate**.
 > `npm run dev` (UI on :5173) in two terminals. The UI calls the API
 > through `/api/*`; nothing is fetched from the browser bundle.
 
-## Troubleshooting
+---
 
-| Symptom | Cause | Fix |
+## How It Works
+
+```
+Claim Input → Claim Extraction (LLM + heuristic fallback) → Wave-Based Search (multi-provider)
+→ Source Normalization/Dedup/Rank → Content Enrichment (Readability) → Evidence Analysis (LLM)
+→ Contradiction Detection → Deterministic Confidence Score → Verdict
+```
+
+### Multi-Provider Search
+
+8 independent, mostly keyless providers searched concurrently with fault isolation — one failing never breaks the others:
+
+| Provider | Type | Notes |
 |---|---|---|
-| `Cannot reach the API server…` / vite `http proxy error … ECONNREFUSED /api/…` | The API server isn't running | Run `npm run dev:server` in a second terminal and retry |
-| Verdict stuck at `UNVERIFIED` with `…search failed…` | No network or search providers blocked | Check connectivity; CI/tests use the offline mock (`NODE_ENV=test`) |
-| `SEARCH FAILED` with per-provider timeouts | Retrieval infra down (see below) | Run `npm run diagnose:search` |
-| `npm run build` ships a huge JS bundle | `NODE_ENV=development` leaked into the build env | Do not set `NODE_ENV` in `.env` (see note below) |
+| DuckDuckGo | Web (scrape) | Default web search, no API key |
+| DDG Instant Answer | Reference | Official Instant Answers API |
+| Wikipedia | Reference | Multi-language support |
+| OpenAlex | Scholarly | Academic papers and citations |
+| GDELT | Global news | worldwide news monitoring |
+| SearXNG | Meta-search | Self-hosted, recommended for production |
+| Google Fact Check | Prior checks | Optional API key |
+| Mock | Offline/demo | Tests and CI |
 
-## Diagnosing search failures
+### Wave-Based Search with Early Stopping
 
-When providers fail, server logs now include the structured cause (`code`, `syscall`, `hostname` — never URLs or keys). For a full workup from the same Node process:
+- **Wave 1:** Neutral + first supporting query. If ≥3 distinct domains give unanimous strong evidence with no contradictions, the system stops early.
+- **Wave 2:** Runs only if needed — remaining supporting/contradicting queries + EXTENDED mode variants.
 
-```bash
-npm run diagnose:search
+Fast when the answer is obvious, thorough when it isn't.
+
+### Deterministic Confidence Scoring
+
+The confidence percentage is computed by a pure function from evidence stances, source quality, diversity, agreement, directness, primary-source presence, freshness, and contradictions — never chosen by the LLM.
+
+| Factor | Max Contribution |
+|---|---|
+| Evidence Strength | ±30 |
+| Source Quality | +20 |
+| Source Independence | +15 |
+| Cross-Source Agreement | +12 |
+| Directness/Coverage | +10 |
+| Primary Sources | +5 |
+| Freshness | +3 |
+| Contradictions | −12 |
+
+Same evidence always yields the same number. The UI shows the full signed breakdown ("Why 87%?").
+
+### Search Depth
+
+Choose FLASH (fast, ~5–15s), DEEP (default, ~60s), or EXTENDED (~150s) next to the claim input.
+
+| Mode | Queries | Sources | In-flight | Provider Budget | Global Deadline |
+|---|---|---|---|---|---|
+| FLASH | ≤3, 1 wave | ≤8 | 3 | 12s | 15s |
+| DEEP | ≤7, 2 waves | ≤20 | 6 | 15s | 60s |
+| EXTENDED | ≤12, 2 waves + variants | ≤40 | 8 | 25s | 150s |
+
+---
+
+## System Architecture
+
+```
+React Client → Express API → Investigate Service
+                                ├── Search Service (8 providers)
+                                ├── Source Normalization
+                                ├── Fetch/Readability
+                                ├── Contradiction Detection
+                                └── Confidence Scoring
+                                     └── Groq LLM (openai/gpt-oss-120b)
 ```
 
-It reports DNS (A/AAAA + latency), IPv4 vs IPv6 TCP connects, HTTPS status/latency per provider host, proxy-env presence (values never printed), then exactly **one query per provider** with connection/HTTP/parser status and per-attempt causes. Exit code is non-zero when no provider returned sources. The same report is available at `GET /api/diagnose/search`.
+- **Frontend:** React 18, Vite, TypeScript
+- **Backend:** Express, Node ≥20.3, Zod validation
+- **AI:** Groq (`openai/gpt-oss-120b`) with mock fallback
+- **Content Extraction:** @mozilla/readability, jsdom, cheerio
+- **Testing:** Vitest, Playwright, Testing Library, Supertest
 
-To separate machine failure from Node-specific failure, compare with curl from the same machine:
+---
 
-```bash
-curl -I https://en.wikipedia.org/      # baseline HTTPS
-curl -4 -I https://api.openalex.org/   # force IPv4
-curl -6 -I https://api.openalex.org/   # force IPv6
-```
+## Security
 
-If curl succeeds where Node fails, the difference is in Node's stack (DNS selection, Happy Eyeballs, TLS); if both fail identically, it's the machine/network. Failure taxonomy used in reports: `network` (DNS/TCP/TLS/timeout) · `http` (provider error status) · `blocked` (challenge/deny page) · `parse` (response uninterpretable) · `empty` (worked, zero hits) · `ok`.
+- **SSRF Protection:** every source URL DNS-resolved and checked against private/loopback/link-local/metadata IP ranges before fetching; DNS failures fail closed
+- **Prompt Injection Stripping:** incoming claims sanitized before processing
+- **BYOK Groq Key Support:** user API keys live only in browser `sessionStorage`, never logged, never persisted server-side
+- **Structured Diagnostics:** `/api/health` and `/api/diagnose/search` provide real diagnostics, never silent failures
 
-## Env vars
+---
+
+## Configuration
+
+### Environment Variables
 
 | Var | Required | Purpose |
 |---|---|---|
@@ -62,57 +145,56 @@ If curl succeeds where Node fails, the difference is in Node's stack (DNS select
 
 Without keys the app runs web search (DuckDuckGo) + Wikipedia + mock LLM; with `NODE_ENV=test` (and CI) all search uses the deterministic mock so the suite never needs network or keys.
 
-## Running frontend / backend
-
-- `npm run dev` — Vite client (:5173).
-- `npm run dev:server` — Express API via tsx watch (:3000).
-- `npm run build` + `npm start` — production (server serves `dist/client` if present; API always on `/api/*`).
-- `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`.
-
-## Configuring providers
-
-- **LLM:** implement `LLMProvider` (`src/server/providers/llm/types.ts`) in one new file (see `groq.ts`, `mock.ts`), then select it in `src/server/services/llmFactory.ts`. The evidence analyzer only depends on the interface.
-- **Search:** implement `SearchProvider` (`src/server/providers/search/types.ts`), register in `getSearchProviders()` (`src/server/services/search.ts`). Neutral/supporting/contradicting queries run concurrently per claim. Current providers: `duckduckgo` (default web), `ddg-instant` (official Instant Answers), `wikipedia` (reference), `openalex` (scholarly), `gdelt` (news), `searxng` (self-hosted), `factcheck` (prior fact-checks, optional key), `mock` (tests/CI). Providers fail independently with per-provider reports; one retry with backoff on timeout/5xx/network errors.
-
-## Search depth
-
-Choose FLASH (fast, ~5–15s budget), DEEP (default, ~60s), or EXTENDED (~150s) next to the claim input. Depth controls the retrieval engine — query waves, provider coverage, source caps, expansion and page-fetch budgets, per-request provider budgets, max in-flight requests, and a global hard deadline — never just the prompt. Current budgets (derived from measured baselines: cold ~6–7s, warm ~1s, ≤5 concurrent stable): Current budgets (derived from measured baselines: cold ~6–7s, warm ~1s, ≤5 concurrent stable):
-
-| Mode | Queries | Sources | In-flight | Provider budget | Global deadline |
-|---|---|---|---|---|---|
-| FLASH | ≤3, 1 wave | ≤8 | 3 | 12s | 15s |
-| DEEP | ≤7, 2 waves | ≤20 | 6 | 15s | 60s |
-| EXTENDED | ≤12, 2 waves + variants | ≤40 | 8 | 25s | 150s |
-
-Strong unanimous early evidence can stop the search before the budget is spent; exhausted budgets are flagged on the result, which also records the depth and searched/unique source counts.
-
-## Confidence percentage
-
-The verdict shows a deterministic confidence percentage computed by `src/server/services/confidence.ts` from evidence stances, source quality/diversity, agreement, and contradictions — never chosen by the LLM (its output schema has no percentage surface; only stance/strength feed the formula). Same evidence always yields the same number; the UI shows the signed breakdown. The percentage is confidence *in the verdict*, not probability the claim is true. Search failure shows no percentage at all (`SEARCH FAILED` + provider statuses + retry); thin evidence shows `UNVERIFIED` worded as insufficient evidence.
-
-## Search trade-offs (read this before deploying)
-
-- The default web search scrapes DuckDuckGo's HTML results endpoint with `cheerio` — there is no official free DDG web-search API, so this is a scrape, not a documented endpoint. It needs zero keys, but it is inherently fragile (DDG can change its markup without notice; parse failures surface as typed provider errors, never crashes) and automated querying is against DDG's terms for production-scale use. Mitigations built in: real `User-Agent`, ≥1.2s spacing between requests, 10-minute identical-query cache. DDG's official Instant Answer API is intentionally *not* used as a provider — it returns infobox answers only, not web results.
-- **Recommended upgrade path:** self-host [SearXNG](https://docs.searxng.org/) (open-source metasearch, JSON API, no per-query cost) and set `SEARXNG_URL` — the app swaps to it with no other changes.
-- Source pages are fetched with plain HTTP + `@mozilla/readability`/`jsdom` (free, self-hosted); no headless browser, no paid scraping APIs. Every fetch carries a real `User-Agent`, a 20s total deadline, and a 2MB cap, and every URL (including each redirect hop) passes an SSRF guard that blocks private/loopback/link-local/metadata ranges and fails closed on DNS errors. Paywalled/unreachable sources fall back to archive.org and are labeled `archived_fallback`. The app respects HTTP status codes and rate pacing; it does not bypass CAPTCHAs, paywalls, robots handling, or bot protections.
-
-## BYOK usage
+### BYOK Usage
 
 Open **Settings** → paste a Groq key → **Test connection** → run an investigation. The key lives in `sessionStorage` only, overrides the server key per request, and is never written to logs, echoed in responses, or persisted beyond the session. **Remove key** clears it.
 
+---
+
 ## API
 
-- `POST /api/investigate` `{ claim, apiKey?, model? }` → full investigation (multi-claim, per-claim verdicts).
-- `POST /api/search` `{ query }` → normalized sources (internal/testing).
-- `POST /api/analyze` `{ claim, sources, apiKey?, model? }` → validated analysis (internal/testing).
-- `GET /api/investigations/:id`, `POST /api/investigations/:id/recheck`, `GET /api/investigations/:id/export?format=json|bibtex`.
-- `GET /api/health` → `{ llm: { provider, ok, message }, searchProviders }`.
-- `POST /api/test-connection` → `{ ok, message }` (key never logged/echoed).
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/investigate` | POST | Full investigation (multi-claim, per-claim verdicts) |
+| `/api/search` | POST | Normalized sources (internal/testing) |
+| `/api/analyze` | POST | Validated analysis (internal/testing) |
+| `/api/investigations/:id` | GET | Retrieve investigation by ID |
+| `/api/investigations/:id/recheck` | POST | Re-check an investigation |
+| `/api/investigations/:id/export` | GET | Export as JSON or BibTeX |
+| `/api/health` | GET | LLM and search provider status |
+| `/api/diagnose/search` | GET | Full search provider diagnostics |
+| `/api/test-connection` | POST | Test API key validity |
+
+---
 
 ## Deployment
 
 Any Node 20.3+ host: set env vars, `npm ci && npm run build`, run `npm start` behind HTTPS. No database; history/cache are in-memory session scope. Never set real keys in the client bundle — backend-only. Do not set `NODE_ENV=development` in production (a dev React bundle would be shipped).
 
-## Verdicts
+**Recommended production upgrade:** self-host [SearXNG](https://docs.searxng.org/) (open-source metasearch, JSON API, no per-query cost) and set `SEARXNG_URL` — the app swaps to it with no other changes.
 
-`TRUE · MOSTLY TRUE · MIXED · MOSTLY FALSE · FALSE · UNVERIFIED · NOT A FACTUAL CLAIM` with `high|medium|low` confidence labels (never percentages). `UNVERIFIED` on thin evidence is a correct answer, not a failure. Time-sensitive claims carry a `verified as of [date]` note.
+---
+
+## Known Limitations
+
+- **In-memory store** — no persistence across restarts; single-session scope
+- **DDG scraping is fragile** — DuckDuckGo can change markup without notice; SearXNG is the recommended production upgrade
+- **No multi-user authentication** — single-user design for now
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Cannot reach the API server…` / vite `http proxy error … ECONNREFUSED /api/…` | The API server isn't running | Run `npm run dev:server` in a second terminal and retry |
+| Verdict stuck at `UNVERIFIED` with `…search failed…` | No network or search providers blocked | Check connectivity; CI/tests use the offline mock (`NODE_ENV=test`) |
+| `SEARCH FAILED` with per-provider timeouts | Retrieval infra down | Run `npm run diagnose:search` |
+| `npm run build` ships a huge JS bundle | `NODE_ENV=development` leaked into the build env | Do not set `NODE_ENV` in `.env` |
+
+---
+
+## Team
+
+- **Binayak Adhikari** — Team Leader / Programmer
+- **Amulya Pathak** — Presenter / Debugger
